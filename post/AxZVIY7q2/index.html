@@ -1,0 +1,378 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>哈希长度扩展攻击 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="哈希长度扩展攻击 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+很多哈希算法都存在Length Extension攻击，这是因为这些哈希算法都使用了Merkle–Damgård hash construction进行数据压缩，流行算法比如MD5、SHA-1等都收到影响。
+以MD5为例，首先算法将消..." />
+    <meta name="keywords" content="学习" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              哈希长度扩展攻击
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-11
+              </span>
+              <span>
+                11 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gT7zd6Cw_/" class="post-tag">
+                  # 学习
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>很多哈希算法都存在Length Extension攻击，这是因为这些哈希算法都使用了Merkle–Damgård hash construction进行数据压缩，流行算法比如MD5、SHA-1等都收到影响。<br>
+以MD5为例，首先算法将消息以512bit(就是64字节)的长度分组。最后一组必然不是512bit，这时算法就会自动往最后一组中填充字节，这个过程被称为padding。<br>
+<img src="https://1jzz.github.io/post-images/1649674820343.png" alt="" loading="lazy"><br>
+而Length Extension是这样的：<br>
+当知道MD5(secret)和secret的长度时，在不知道secret的情况下，可以推算出MD5(secret || padding ||m')。<br>
+在这里m'是追加的任意数据，||是连接符。padding是secret最后的填充字节。<br>
+<img src="https://1jzz.github.io/post-images/1649674854051.png" alt="" loading="lazy"></p>
+<h1 id="理解length-extension-attack">理解Length Extension Attack</h1>
+<p>在理解Length Extension Attack之前，我们需要对md5的加密流程有一个大致的了解。这里从网上找了一个javascript版本的md5加密算法。<br>
+首先，MD5算法会对消息进行分组，每组64个字节，不足64个字节的部分用padding补齐。padding的规则是，在最末一个字节之后补充一个0x80，其余部分填充0x00，padding最后的8个字节用来表示需要哈希的消息长度。</p>
+<pre><code class="language-javascript">function hex_md5(s){ return binl2hex(core_md5(str2binl(s), s.length * chrsz));}
+
+function core_md5(x, len)
+{
+  /* append padding */
+  alert(binl2hex(x));
+  x[len &gt;&gt; 5] |= 0x80 &lt;&lt; ((len) % 32);
+  x[(((len + 64) &gt;&gt;&gt; 9) &lt;&lt; 4) + 14] = len;
+</code></pre>
+<p>进行md5加密：<br>
+<code>hex_md5(&quot;ljzz&quot;)</code><br>
+因为数据总共只有4个字节，不是64个字节，因此剩下部分需要经过padding。padding后的数据变为：<br>
+<img src="https://1jzz.github.io/post-images/1649674899006.png" alt="" loading="lazy"><br>
+最后8个字节用以数据长度，为<code>4*8 = 32</code>，在16进制中就是20。<br>
+在对消息进行分组及padding后，MD5算法开始依次对每组消息进行压缩，经过64轮数学变换。在这个过程中，一开始会有定义好的初始化向量，为4个中间值，初始化向量不是随机生成的，是标准里定义死的——硬编码：</p>
+<pre><code class="language-javascript">  var a =  1732584193;
+  var b = -271733879;
+  var c = -1732584194;
+  var d =  271733878;
+  for(var i = 0; i &lt; x.length; i += 16)
+  {
+    var olda = a;
+    var oldb = b;
+    var oldc = c;
+    var oldd = d;
+    a = md5_ff(a, b, c, d, x[i+ 0], 7 , -680876936);
+    d = md5_ff(d, a, b, c, x[i+ 1], 12, -389564586);
+    c = md5_ff(c, d, a, b, x[i+ 2], 17,  606105819);
+    b = md5_ff(b, c, d, a, x[i+ 3], 22, -1044525330);
+    a = md5_ff(a, b, c, d, x[i+ 4], 7 , -176418897);
+    d = md5_ff(d, a, b, c, x[i+ 5], 12,  1200080426);
+    c = md5_ff(c, d, a, b, x[i+ 6], 17, -1473231341);
+    b = md5_ff(b, c, d, a, x[i+ 7], 22, -45705983);
+    a = md5_ff(a, b, c, d, x[i+ 8], 7 ,  1770035416);
+    d = md5_ff(d, a, b, c, x[i+ 9], 12, -1958414417);
+    c = md5_ff(c, d, a, b, x[i+10], 17, -42063);
+    b = md5_ff(b, c, d, a, x[i+11], 22, -1990404162);
+    a = md5_ff(a, b, c, d, x[i+12], 7 ,  1804603682);
+    d = md5_ff(d, a, b, c, x[i+13], 12, -40341101);
+    c = md5_ff(c, d, a, b, x[i+14], 17, -1502002290);
+    b = md5_ff(b, c, d, a, x[i+15], 22,  1236535329);
+    a = md5_gg(a, b, c, d, x[i+ 1], 5 , -165796510);
+    d = md5_gg(d, a, b, c, x[i+ 6], 9 , -1069501632);
+    c = md5_gg(c, d, a, b, x[i+11], 14,  643717713);
+    b = md5_gg(b, c, d, a, x[i+ 0], 20, -373897302);
+    a = md5_gg(a, b, c, d, x[i+ 5], 5 , -701558691);
+    d = md5_gg(d, a, b, c, x[i+10], 9 ,  38016083);
+    c = md5_gg(c, d, a, b, x[i+15], 14, -660478335);
+    b = md5_gg(b, c, d, a, x[i+ 4], 20, -405537848);
+    a = md5_gg(a, b, c, d, x[i+ 9], 5 ,  568446438);
+    d = md5_gg(d, a, b, c, x[i+14], 9 , -1019803690);
+    c = md5_gg(c, d, a, b, x[i+ 3], 14, -187363961);
+    b = md5_gg(b, c, d, a, x[i+ 8], 20,  1163531501);
+    a = md5_gg(a, b, c, d, x[i+13], 5 , -1444681467);
+    d = md5_gg(d, a, b, c, x[i+ 2], 9 , -51403784);
+    c = md5_gg(c, d, a, b, x[i+ 7], 14,  1735328473);
+    b = md5_gg(b, c, d, a, x[i+12], 20, -1926607734);
+    a = md5_hh(a, b, c, d, x[i+ 5], 4 , -378558);
+    d = md5_hh(d, a, b, c, x[i+ 8], 11, -2022574463);
+    c = md5_hh(c, d, a, b, x[i+11], 16,  1839030562);
+    b = md5_hh(b, c, d, a, x[i+14], 23, -35309556);
+    a = md5_hh(a, b, c, d, x[i+ 1], 4 , -1530992060);
+    d = md5_hh(d, a, b, c, x[i+ 4], 11,  1272893353);
+    c = md5_hh(c, d, a, b, x[i+ 7], 16, -155497632);
+    b = md5_hh(b, c, d, a, x[i+10], 23, -1094730640);
+    a = md5_hh(a, b, c, d, x[i+13], 4 ,  681279174);
+    d = md5_hh(d, a, b, c, x[i+ 0], 11, -358537222);
+    c = md5_hh(c, d, a, b, x[i+ 3], 16, -722521979);
+    b = md5_hh(b, c, d, a, x[i+ 6], 23,  76029189);
+    a = md5_hh(a, b, c, d, x[i+ 9], 4 , -640364487);
+    d = md5_hh(d, a, b, c, x[i+12], 11, -421815835);
+    c = md5_hh(c, d, a, b, x[i+15], 16,  530742520);
+    b = md5_hh(b, c, d, a, x[i+ 2], 23, -995338651);
+    a = md5_ii(a, b, c, d, x[i+ 0], 6 , -198630844);
+    d = md5_ii(d, a, b, c, x[i+ 7], 10,  1126891415);
+    c = md5_ii(c, d, a, b, x[i+14], 15, -1416354905);
+    b = md5_ii(b, c, d, a, x[i+ 5], 21, -57434055);
+    a = md5_ii(a, b, c, d, x[i+12], 6 ,  1700485571);
+    d = md5_ii(d, a, b, c, x[i+ 3], 10, -1894986606);
+    c = md5_ii(c, d, a, b, x[i+10], 15, -1051523);
+    b = md5_ii(b, c, d, a, x[i+ 1], 21, -2054922799);
+    a = md5_ii(a, b, c, d, x[i+ 8], 6 ,  1873313359);
+    d = md5_ii(d, a, b, c, x[i+15], 10, -30611744);
+    c = md5_ii(c, d, a, b, x[i+ 6], 15, -1560198380);
+    b = md5_ii(b, c, d, a, x[i+13], 21,  1309151649);
+    a = md5_ii(a, b, c, d, x[i+ 4], 6 , -145523070);
+    d = md5_ii(d, a, b, c, x[i+11], 10, -1120210379);
+    c = md5_ii(c, d, a, b, x[i+ 2], 15,  718787259);
+    b = md5_ii(b, c, d, a, x[i+ 9], 21, -343485551);
+    a = safe_add(a, olda);
+    b = safe_add(b, oldb);
+    c = safe_add(c, oldc);
+    d = safe_add(d, oldd);
+  }
+  return Array(a, b, c, d);
+</code></pre>
+<p>这是一个for循环，在进行完数学变换后，将改变临时中间值，这个值进入下一轮for循环：</p>
+<pre><code class="language-javascript">    a = safe_add(a, olda);
+    b = safe_add(b, oldb);
+    c = safe_add(c, oldc);
+    d = safe_add(d, oldd);
+</code></pre>
+<p>回忆刚才的MD5结构图，这个for循环的过程，就是一次次的压缩过程。上一次的压缩结果，将作为下一次压缩的输入。而Length Extension的理论基础，就是将已知的压缩后的结果，直接拿过来作为新的压缩输入。在这个过程中，只需要上一次压缩后的结果，而不需要知道原来的消息内容是什么。</p>
+<p>然后，用MD5(secret)中的四个中间值和padding后的进行64轮数学变换，进行第二轮附加了消息的压缩，产生新的MD5值。</p>
+<h1 id="md5数据填充流程">md5数据填充流程</h1>
+<ol>
+<li>
+<p>采用小端模式，高字节保存在内存的高地址中，而数据的低字节保存在内存的低地址中</p>
+</li>
+<li>
+<p>padding</p>
+<p>以64字节为一组，一共512bit，其中最后8个字节用于存放需要哈希的消息长度:</p>
+<p><code>512 - 8*8 =448</code></p>
+<p>又因为要在最后一个字节中填充<code>0x80</code>，所以需要填充的范围为<code>1bit-448bit</code></p>
+</li>
+<li>
+<p>消息长度</p>
+<p>8个字节，即64bit用于存放需要哈希的消息长度，如果消息的长度大于2 ^ 64，那么64bit无法存储消息的长度，则取低64bit。</p>
+</li>
+</ol>
+<h1 id="实施length-extension-attack">实施Length Extension Attack</h1>
+<p>理解了Length Extension的原理后，接下来就需要实施这个攻击了。这里有几点需要注意，首先是MD5值怎么还原为压缩函数中所需要的4个整数？<br>
+简单的来说，就是先把md5值拆分成4组，每组8个字节。比如：<br>
+<code>76e7b1efe76ef6fd341392520d6d9318</code><br>
+拆分为：<br>
+<code>76e7b1ef</code> <code>e76ef6fd</code> <code>34139252</code> <code>0d6d9318</code><br>
+然后将这几个string转换为整数，再根据一系列的数学变化，还原成for循环里面需要用到a、b、c、d。<br>
+接下来将这4个值加入到MD5的压缩函数中，并产生新的值。此时就可以在后面附加任意数据了。<br>
+<img src="https://1jzz.github.io/post-images/1649674945614.png" alt="" loading="lazy"><br>
+如果想要向padding后的消息再追加一条消息字符串&quot;admin&quot;，则会对这个字符串进行padding，再利用上一个运算出的值作为初始向量进行函数运算。<br>
+<code>6c6a7a7a</code>，这四个十六进制的值为ljzz。<br>
+<code>%80%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%20%00%00%00%00%00%00%00admin</code></p>
+<h1 id="思路整理">思路整理</h1>
+<p>我们在知道secret的长度之后就可以自行对其进行padding，然后再将m'（任意数据填充进去），这样的话就可计算出<code>消息+padding+追加任意数据</code>的MD5值。</p>
+<p>利用条件：</p>
+<ul>
+<li>知道密文(secret)的哈希值</li>
+<li>知道密文(secret)的长度</li>
+</ul>
+<h1 id="验证">验证</h1>
+<p>使用hashpump生成MD5值：</p>
+<pre><code class="language-bash">┌──(root💀kali)-[/home/ljzz/桌面/tools/HashPump]
+└─# hashpump                                                                    130 ⨯
+Input Signature: 76e7b1efe76ef6fd341392520d6d9318
+Input Data: ljzz
+Input Key Length: 4
+Input Data to Add: admin
+ede46fbde4e6b12b46aee08b45805947
+ljzz\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00admin
+</code></pre>
+<p>用于测试两者md5值是否相同的代码：</p>
+<pre><code class="language-javascript">&lt;?php 
+
+$secret = &quot;ljzz&quot;; 
+$password = &quot;%80%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%20%00%00%00%00%00%00%00admin&quot;;
+$hash = &quot;ede46fbde4e6b12b46aee08b45805947&quot;;
+if($hash === md5($secret . urldecode($password))){
+    echo &quot;success&quot;;
+}else{
+    die(&quot;failed&quot;);
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1649674967231.png" alt="" loading="lazy"></p>
+<h1 id="如何利用">如何利用</h1>
+<ul>
+<li>伪造签名中的参数，生成一个新的合法的签名</li>
+<li>附加新的参数(未出现过)</li>
+<li>length可以考虑暴力破解</li>
+</ul>
+<h1 id="防御">防御</h1>
+<ul>
+<li>使用HMAC-SHA1之类的HMAC算法（交换secret和padding的位置）</li>
+</ul>
+<h1 id="参考">参考</h1>
+<p><a href="http://blog.nsfocus.net/hash-length-extension-attack/">http://blog.nsfocus.net/hash-length-extension-attack/</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#%E7%90%86%E8%A7%A3length-extension-attack">理解Length Extension Attack</a></li>
+<li><a href="#md5%E6%95%B0%E6%8D%AE%E5%A1%AB%E5%85%85%E6%B5%81%E7%A8%8B">md5数据填充流程</a></li>
+<li><a href="#%E5%AE%9E%E6%96%BDlength-extension-attack">实施Length Extension Attack</a></li>
+<li><a href="#%E6%80%9D%E8%B7%AF%E6%95%B4%E7%90%86">思路整理</a></li>
+<li><a href="#%E9%AA%8C%E8%AF%81">验证</a></li>
+<li><a href="#%E5%A6%82%E4%BD%95%E5%88%A9%E7%94%A8">如何利用</a></li>
+<li><a href="#%E9%98%B2%E5%BE%A1">防御</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/t9O1cns6I/">
+              <h3 class="post-title">
+                浅析Padding Oracle Attack
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

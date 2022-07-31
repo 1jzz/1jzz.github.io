@@ -1,0 +1,214 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>idea远程调试 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="idea远程调试 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="idea配置Remote
+
+添加一个Remote JVM Debug
+随便改个名字和选择一个空闲端口
+配置调试中jdk的版本
+选择使用模块类路径(想要调试项目的代码)
+复制启动参数
+
+-agentlib:jdwp=transport=dt_..." />
+    <meta name="keywords" content="环境" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              idea远程调试
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-12
+              </span>
+              <span>
+                1 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/Xbu8MG4Ck/" class="post-tag">
+                  # 环境
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="idea配置remote">idea配置Remote</h1>
+<ol>
+<li>添加一个Remote JVM Debug</li>
+<li>随便改个名字和选择一个空闲端口</li>
+<li>配置调试中jdk的版本</li>
+<li>选择使用模块类路径(想要调试项目的代码)</li>
+<li>复制启动参数</li>
+</ol>
+<p><code>-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005</code></p>
+<h1 id="jar包远程调试">jar包远程调试</h1>
+<ol>
+<li>复制Remote中的启动参数</li>
+<li>以该启动参数运行jar包</li>
+<li>即可在idea中下断点调试</li>
+</ol>
+<p><code>java -jar -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005</code></p>
+<h1 id="war包远程调试">war包远程调试</h1>
+<ol>
+<li>复制Remote中的启动参数</li>
+<li>修改tomcat下cateline.bat或cateline.sh中的JAVA_OPTS</li>
+<li>以cateline.bat为例</li>
+</ol>
+<p><code>set &quot;JAVA_OPTS=%JAVA_OPTS% %JSSE_OPTS%  -Dfile.encoding=UTF-8 -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005&quot; </code></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#idea%E9%85%8D%E7%BD%AEremote">idea配置Remote</a></li>
+<li><a href="#jar%E5%8C%85%E8%BF%9C%E7%A8%8B%E8%B0%83%E8%AF%95">jar包远程调试</a></li>
+<li><a href="#war%E5%8C%85%E8%BF%9C%E7%A8%8B%E8%B0%83%E8%AF%95">war包远程调试</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/AxZVIY7q2/">
+              <h3 class="post-title">
+                哈希长度扩展攻击
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

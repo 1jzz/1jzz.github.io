@@ -1,0 +1,658 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>内存马学习1 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="内存马学习1 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+内存马是无文件落地的webshell技术，是由于webshell特征识别、防篡改、目录监控等等针对web应用目录或者服务器文件防御手段的介入，导致的文件shell难以写入和持久而衍生出的一种&quot;概念性&quot;木马。这种技术..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              内存马学习1
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-06-04
+              </span>
+              <span>
+                20 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>内存马是无文件落地的webshell技术，是由于webshell特征识别、防篡改、目录监控等等针对web应用目录或者服务器文件防御手段的介入，导致的文件shell难以写入和持久而衍生出的一种&quot;概念性&quot;木马。这种技术的核心思想是对访问路径映射及相关处理代码的动态注册。<br>
+目前内存马主要分为以下几种方式：</p>
+<ul>
+<li>动态注册servlet/filter/listener(使用servlet-api的具体实现)</li>
+<li>动态注册interceptor/controller(使用框架入spring/struts2)</li>
+<li>动态注册使用职责链设计模式的中间件、框架的实现(例如Tomcat的Pipeline &amp; valve，Grizzly的FilterChain &amp; Filter等等)</li>
+<li>使用java agent技术写入字节码</li>
+</ul>
+<h1 id="使用">使用</h1>
+<h2 id="servlet-api提供的动态注册机制">Servlet API提供的动态注册机制</h2>
+<p>Servlet、Listener、Filter由<code>javax.servlet.ServletContext</code>去加载，无论是使用xml配置文件还是使用Annotation注释配置，均由web容器进行初始化，读取其中的配置属性，然后向容器中进行注册。<br>
+Servlet 3.0 API 允许ServletContext进行动态注册，在Web容器初始化的时候(即建立ServletContext对象的时候)进行动态注册。可以看到ServletContext提供了add*/create*方法来实现动态注册的功能。<br>
+在不同的容器中，实现有所不同，这里以Tomcat为例调试。</p>
+<h3 id="filter内存马">Filter内存马</h3>
+<p>Filter我们称之为过滤器，是java最常见也最实用的技术之一，通常被用来处理静态web资源、访问权限控制、记录日志等附加功能等等。一次请求进入到服务器后，将先由Filter对用户请求进行预处理，再交给Servlet。<br>
+通常情况下，Filter配置在配置文件和注解中，在其他代码中如果想要完成注册，主要有以下几种方式：</p>
+<ol>
+<li>使用ServletContext的addFilter/createFilter方法注册</li>
+<li>使用ServletContextListener的contextInitialized方法在服务器启动时注册</li>
+<li>使用ServletContainerInitializer的onStarup方法在初始化时注册(非动态)</li>
+</ol>
+<p>本节只讨论使用ServletContext添加Filter内存马的方法。首先来看一下createFilter方法，按照注释，这个类用来在调用addFilter向ServletContext实例化一个指定的Filter类。<br>
+<img src="https://1jzz.github.io/post-images/1654331283442.png" alt="" loading="lazy"><br>
+这个类还约定了一个事情，那就是如果这个ServletContext传递给ServletContextListener的<code>ServletContextListener#contextInitialized()</code>方法，该方法既未在web.xml或web-fragment.xml中声明，也未使用javax.servlet.annotation.WebListener进行注释，则会抛出UnsupportedOperationException异常，这个约定是非常重要的一点。<br>
+接下来看<code>addFilter</code>方法，ServletContext中有三个重载方法，其参数分别有以下三种：</p>
+<ol>
+<li>String filterName</li>
+<li>String className</li>
+<li>Filter filter</li>
+<li>Class &lt;? extend Filter&gt; filterClass</li>
+</ol>
+<p>这几个重载方法都返回了FilterRegistration.Dynamic，也就是FilterRegistration对象。<br>
+addFilter方法实际上就是动态添加filter的最核心的关键方法，但是这个类中同样约定了UnsupportedOperationException异常。<br>
+由于Servlet API只是提供接口定义，具体的实现还要看具体的容器，那我们以Tomcat9.0.60为例，看一下具体的实现细节。相关实现方法在<code>org.apache.cataline.core.ApplicationContext#addFilter</code>方法中。</p>
+<pre><code class="language-java">private FilterRegistration.Dynamic addFilter(String filterName,
+                                             String filterClass, Filter filter) throws IllegalStateException {
+    
+    if (filterName == null || filterName.equals(&quot;&quot;)) {
+        throw new IllegalArgumentException(sm.getString(
+            &quot;applicationContext.invalidFilterName&quot;, filterName));
+    }
+    
+    if (!context.getState().equals(LifecycleState.STARTING_PREP)) {
+        //TODO Spec breaking enhancement to ignore this restriction
+        throw new IllegalStateException(
+            sm.getString(&quot;applicationContext.addFilter.ise&quot;,
+                         getContextPath()));
+    }
+    
+    FilterDef filterDef = context.findFilterDef(filterName);
+    
+    // Assume a 'complete' FilterRegistration is one that has a class and
+    // a name
+    if (filterDef == null) {
+        filterDef = new FilterDef();
+        filterDef.setFilterName(filterName);
+        context.addFilterDef(filterDef);
+    } else {
+        if (filterDef.getFilterName() != null &amp;&amp;
+            filterDef.getFilterClass() != null) {
+            return null;
+        }
+    }
+    
+    if (filter == null) {
+        filterDef.setFilterClass(filterClass);
+    } else {
+        filterDef.setFilterClass(filter.getClass().getName());
+        filterDef.setFilter(filter);
+    }
+    
+    return new ApplicationFilterRegistration(filterDef, context);
+    }
+</code></pre>
+<ol>
+<li>fileName不能为空</li>
+<li>通过context(StandardContext对象)判断是否在运行</li>
+<li>在context中根据filterName寻找FilterDef对象</li>
+<li>FilterDef对象为空则进行初始化</li>
+<li>如果传入的filter不为空则将其赋值给filterDef对象</li>
+<li>然后返回了ApplicationFilterRegisteration对象，只是将这个Filter进行注册，并没有将这个Filter放到FilterChain中</li>
+</ol>
+<p>这里既然不能直接将Filter加到FilterChain，那么我们会想是否可以将其加入到FilterChain呢？FilterChain在Tomcat中的实现是<code>org.apache.catalina.core.ApplicationFilterChain</code>，这个类提供了一个addFilter方法添加Filter，这个方法接收一个ApplicationFilterConfig对象，将其放在this.filters中，就将Filter加到了FilterChain了。<br>
+Tomcat是如何在处理请求的时候调用FilterChain的呢？在ApplicationFilterFactory的createFilterChain方法中，可以看到流程如下：</p>
+<pre><code class="language-java">public static ApplicationFilterChain createFilterChain(ServletRequest request,
+                                                       Wrapper wrapper, Servlet servlet) {
+
+    // If there is no servlet to execute, return null
+    if (servlet == null) {
+        return null;
+    }
+
+    // Create and initialize a filter chain object
+    ApplicationFilterChain filterChain = null;
+    if (request instanceof Request) {
+        Request req = (Request) request;
+        if (Globals.IS_SECURITY_ENABLED) {
+            // Security: Do not recycle
+            filterChain = new ApplicationFilterChain();
+        } else {
+            filterChain = (ApplicationFilterChain) req.getFilterChain();
+            if (filterChain == null) {
+                filterChain = new ApplicationFilterChain();
+                req.setFilterChain(filterChain);
+            }
+        }
+    } else {
+        // Request dispatcher in use
+        filterChain = new ApplicationFilterChain();
+    }
+
+    filterChain.setServlet(servlet);
+    filterChain.setServletSupportsAsync(wrapper.isAsyncSupported());
+
+    // Acquire the filter mappings for this Context
+    StandardContext context = (StandardContext) wrapper.getParent();
+    FilterMap filterMaps[] = context.findFilterMaps();
+
+    // If there are no filter mappings, we are done
+    if ((filterMaps == null) || (filterMaps.length == 0)) {
+        return filterChain;
+    }
+
+    // Acquire the information we will need to match filter mappings
+    DispatcherType dispatcher =
+        (DispatcherType) request.getAttribute(Globals.DISPATCHER_TYPE_ATTR);
+
+    String requestPath = null;
+    Object attribute = request.getAttribute(Globals.DISPATCHER_REQUEST_PATH_ATTR);
+    if (attribute != null){
+        requestPath = attribute.toString();
+    }
+
+    String servletName = wrapper.getName();
+
+    // Add the relevant path-mapped filters to this filter chain
+    for (FilterMap filterMap : filterMaps) {
+        if (!matchDispatcher(filterMap, dispatcher)) {
+            continue;
+        }
+        if (!matchFiltersURL(filterMap, requestPath)) {
+            continue;
+        }
+        ApplicationFilterConfig filterConfig = (ApplicationFilterConfig)
+            context.findFilterConfig(filterMap.getFilterName());
+        if (filterConfig == null) {
+            // FIXME - log configuration problem
+            continue;
+        }
+        filterChain.addFilter(filterConfig);
+    }
+
+    // Add filters that match on servlet name second
+    for (FilterMap filterMap : filterMaps) {
+        if (!matchDispatcher(filterMap, dispatcher)) {
+            continue;
+        }
+        if (!matchFiltersServlet(filterMap, servletName)) {
+            continue;
+        }
+        ApplicationFilterConfig filterConfig = (ApplicationFilterConfig)
+            context.findFilterConfig(filterMap.getFilterName());
+        if (filterConfig == null) {
+            // FIXME - log configuration problem
+            continue;
+        }
+        filterChain.addFilter(filterConfig);
+    }
+
+    // Return the completed filter chain
+    return filterChain;
+}
+</code></pre>
+<ol>
+<li>初始化一个ApplicationFilterChain对象</li>
+<li>从StandardContext对象中获取filterMap对象，如果为空则直接return</li>
+<li>从StandardContext对象中根据filterName来查找对应filterConfig，如果有则添加到filterChain</li>
+</ol>
+<p>这里我们直接用反射加进去。其功能是输入小于0的输则进行拦截(随意即可)。<br>
+访问添加filter：<br>
+<img src="https://1jzz.github.io/post-images/1654331298111.png" alt="" loading="lazy"><br>
+传入id参数，值为100，进行显示：<br>
+<img src="https://1jzz.github.io/post-images/1654331304689.png" alt="" loading="lazy"><br>
+传入id参数，值为-1，不进行显示：<br>
+<img src="https://1jzz.github.io/post-images/1654331311585.png" alt="" loading="lazy"></p>
+<h3 id="servlet内存马">Servlet内存马</h3>
+<p>Servlet是Server Applet(服务器小程序)的缩写，用来读取客户端发送的数据，处理并返回结果。也是最常见的java技术之一。<br>
+与Filter相同，本小结也仅仅讨论使用ServletContext的相关方法添加Servlet。首先来看一下实现类ApplicationContext的<code>addServlet</code>方法：</p>
+<pre><code class="language-java">private ServletRegistration.Dynamic addServlet(String servletName, String servletClass,
+                                               Servlet servlet, Map&lt;String,String&gt; initParams) throws IllegalStateException {
+
+    if (servletName == null || servletName.equals(&quot;&quot;)) {
+        throw new IllegalArgumentException(sm.getString(
+            &quot;applicationContext.invalidServletName&quot;, servletName));
+    }
+
+    if (!context.getState().equals(LifecycleState.STARTING_PREP)) {
+        //TODO Spec breaking enhancement to ignore this restriction
+        throw new IllegalStateException(
+            sm.getString(&quot;applicationContext.addServlet.ise&quot;,
+                         getContextPath()));
+    }
+
+    Wrapper wrapper = (Wrapper) context.findChild(servletName);
+
+    // Assume a 'complete' ServletRegistration is one that has a class and
+    // a name
+    if (wrapper == null) {
+        wrapper = context.createWrapper();
+        wrapper.setName(servletName);
+        context.addChild(wrapper);
+    } else {
+        if (wrapper.getName() != null &amp;&amp;
+            wrapper.getServletClass() != null) {
+            if (wrapper.isOverridable()) {
+                wrapper.setOverridable(false);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    ServletSecurity annotation = null;
+    if (servlet == null) {
+        wrapper.setServletClass(servletClass);
+        Class&lt;?&gt; clazz = Introspection.loadClass(context, servletClass);
+        if (clazz != null) {
+            annotation = clazz.getAnnotation(ServletSecurity.class);
+        }
+    } else {
+        wrapper.setServletClass(servlet.getClass().getName());
+        wrapper.setServlet(servlet);
+        if (context.wasCreatedDynamicServlet(servlet)) {
+            annotation = servlet.getClass().getAnnotation(ServletSecurity.class);
+        }
+    }
+
+    if (initParams != null) {
+        for (Map.Entry&lt;String, String&gt; initParam: initParams.entrySet()) {
+            wrapper.addInitParameter(initParam.getKey(), initParam.getValue());
+        }
+    }
+
+    ServletRegistration.Dynamic registration =
+        new ApplicationServletRegistration(wrapper, context);
+    if (annotation != null) {
+        registration.setServletSecurity(new ServletSecurityElement(annotation));
+    }
+    return registration;
+}
+</code></pre>
+<ol>
+<li>首先判断传入的servletName是否为空</li>
+<li>在context中查找对应servletName的child，转为一个Wrapper对象</li>
+<li>如果没有查找到该child则进行初始化，如果查找到并且是可以被重写的话则进行addServlet操作</li>
+<li>分别调用了setServletClass、setServlet，初始化ServletClass和Servlet</li>
+<li>初始化initParm中的参数</li>
+<li>创建ApplicationServletRegistration对象并返回</li>
+</ol>
+<p>和addFilter方法十分类似。那么我们面临同样的问题，再一次访问到达Tomcat时，是如何匹配到具体的Servlet的？</p>
+<ol>
+<li><code>ApplicationServletRegistration#addMapping()</code>方法调用<code>StandardContext#addServletMappingDecoded()</code>方法，在mapper中添加URL路径与Wrapper对象的映射</li>
+<li>并且把URL路径与name的映射put到servletMappings</li>
+</ol>
+<p>这里直接调用相关方法进行添加，当然是用反射直接写入也可以，有一些逻辑较为复杂。访问这个servlet会在程序中生成一个新的servlet：<code>/ljzz</code>。<br>
+<img src="https://1jzz.github.io/post-images/1654331413565.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1654331417887.png" alt="" loading="lazy"></p>
+<h3 id="listener内存马">Listener内存马</h3>
+<p>Servlet和Filter是程序员常接触的两个技术，所以在网络上对于之前两小节的讨论较多，对于Listener的讨论较少。<br>
+Listener可以译为监听器，监听器用来监听对象或者流程的常见和销毁，通过Listener，可以自动触发一些操作，因此依靠它也可以完成内存马的实现。先来了解一下Listener是干什么的。看一下Servlet API中的注释。<br>
+<img src="https://1jzz.github.io/post-images/1654331423839.png" alt="" loading="lazy"><br>
+将类名传入到该接口的实现类中的该方法，然后将使用此ServletContext表示的应用程序关联的类加载器加载，并且必须实现以下一个或者多个接口：</p>
+<ol>
+<li>ServletContextListenrer：用于监听整个Servlet上下文</li>
+<li>ServletContextAttributeListener：对Servlet上下文属性进行监听</li>
+<li>ServletRequestListener：对Request请求进行监听</li>
+<li>ServletRequestAttributeListener：对Request属性进行监听</li>
+<li>javax.servlet.http.HttpSessionListener：对Session整体状态的监听</li>
+<li>javax.servlet.http.HttpSessionAttributeListener：对Session属性的监听</li>
+</ol>
+<p>可以看到Listener也是为一次访问的请求或生命周期进行服务的。在上述每个不同的接口中，都提供了不同的方法， 用来在监听的对象发生时进行触发。而这些类接口，实际上都是<code>java.util.EventListener</code>的子接口。这里我们看到，在ServletRequestListener接口中，提供了两个方法在request请求创建和销毁时进行处理，比较适合我们用来做内存马。<br>
+<img src="https://1jzz.github.io/post-images/1654331428841.png" alt="" loading="lazy"><br>
+除了这个Listener，其他的Listener在某些情况下也可以出发作为内存马的实现。<br>
+ServletRequestListener提供两个方法:requestInitialized和requestDestroyed，两个方法均接收ServletRequestEvent作为参数，ServletRequestEvent中又储存了ServletContext对象和ServletRequest对象，因此在访问请求过程中我们可以在request创建和销毁时实现自己的恶意代码，完成内存马的实现。<br>
+Tomcat中EventListeners存放在StandardContext的applicationEventListenersObjects属性中，同样可以使用StandardContext的相关add方法添加。<br>
+我们还是实现一个简单的功能，在requestInitialized方法中获取request对象，调用addAttribute方法添加参数。<br>
+正常访问时：<br>
+<img src="https://1jzz.github.io/post-images/1654331446077.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1654331450135.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1654331453394.png" alt="" loading="lazy"><br>
+除了EventListener，Tomcat还存在一个LifecycleListener，当然也肯定有可以用来触发的实体类，但是用起来一定是不如ServletRequestListener，但是也可以关注一下。</p>
+<ol>
+<li>在requestInitialized中监听，如果访问到了某个特定的URL，或这次请求中包含某些特征(可以拿到request对象，随便怎么定义)，则新起一个线程去StandardContext中注册一个Filter，可以实现某些恶意功能</li>
+<li>在requestDestroyed中再起一个新线程sleep一定时间后我们添加的Filter卸载</li>
+</ol>
+<p>这样我们就有了一个真正的动态后门，只有用的时候才回去注册它，用完就删。可以看出Listener内存马的危害性和玩法的变化要大于Filter/Servlet内存马的。</p>
+<h1 id="控制器-拦截器-管道">控制器、拦截器、管道</h1>
+<p>在之前的内容中，我们分析了Servlet API中提供的能够利用实现内存马的一些点。总结来说：</p>
+<ul>
+<li>Servlet：在用户请求路径与处理类映射之处，添加一个指定路径的指定处理类</li>
+<li>Filter：在用户处理类之前的，用来对请求进行额外处理提供额外功能的类</li>
+<li>Listener：在Filter之外的监听进程</li>
+</ul>
+<p>那么除了Servlet API，其实在常用的框架、组件、中间件的实现中，只要采用了类似的设计思想和设计模式的位置，都可以被发掘出来作为内存马的相关实现。</p>
+<h2 id="spring-controller内存马">Spring Controller内存马</h2>
+<p>Servlet能做内存马，Controller当然也能做，不过SpringMVC可以在运行时动态添加Controller吗？答案是肯定的。在动态注册Servlet时，注册了两个东西，一个是Servlet的本身实现，一个Servlet与URL的映射Servlet-Mapping，在注册Controller时，也同样需要注册两个东西，一个是Controller，一个是RequestMapping映射。这里使用spring-webmvc-5.3.16进行调试。<br>
+所谓Spring Controller的动态注册，就是对RequestMppingHandlerMapping注入的过程。<br>
+首先来看两个类：</p>
+<ol>
+<li>RequestMappingInfo：一个封装类，对一次http请求中的相关信息进行封装</li>
+<li>HandlerMethod：对Controller的处理请求方法的封装，里面包含了该方法所属的bean、method、参数等对象</li>
+</ol>
+<p>SpringMVC初始化时，在每个容器的bean构造方法、属性设置之后，将会使用InitializingBean的afterPropertiesSet方法进行Bean的初始化操作，其中实现类RequestMappingHandlerMapping用来处理具有<code>@Controller</code>注解类中的方法界别的<code>@RequestMaaping</code>以及RequestMappingInfo实例的创建。看一下具体是怎么创建的。<br>
+它的<code>afterPropertiesSet</code>方法初始化了RequestMappingInfo.BuilderConfiguration这个配置类，然后调用了其父类AbstractHandlerMethodMapping的<code>afterPropertiesSet</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1654331461949.png" alt="" loading="lazy"><br>
+这个方法调用initHandlerMethods方法，然后获取了Spring中注册的Bean进行遍历循环，调用<code>processCandidateBean()</code>方法处理bean。<br>
+<img src="https://1jzz.github.io/post-images/1654331470243.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1654331474102.png" alt="" loading="lazy"><br>
+isHandler方法：这是一个抽象方法，在RequestMappingHandlerMapping类中进行了实现：<br>
+<img src="https://1jzz.github.io/post-images/1654331481156.png" alt="" loading="lazy"><br>
+判断当前bean的是否有Controller或RequestMapping注解。<br>
+<code>AbstractHandlerMethodMapping.detectHandlerMethods()</code>方法：<br>
+<img src="https://1jzz.github.io/post-images/1654331486440.png" alt="" loading="lazy"></p>
+<ol>
+<li>首先获取bean的Class对象</li>
+<li>获取当前bean的所有handler method(RequestMapping)</li>
+<li>根据method创建RequestMappinginfo对象(在子类中进行实现)</li>
+<li>通过forEach方法遍历bean最后调用registerHandlerMethod方法将其进行注册</li>
+</ol>
+<p>这里的registerHandlerMethod方法调用了<code>MappingRegistry#register()</code>方法将信息存储在这些属性中：<br>
+<img src="https://1jzz.github.io/post-images/1654331492096.png" alt="" loading="lazy"><br>
+以上就是整个注册流程，那当一次请求进来时如何进行查找定位这个handler method呢？在<code>AbstractHandlerMethodMapping#lookupHandlerMethod()</code>方法：</p>
+<pre><code class="language-java">protected HandlerMethod lookupHandlerMethod(String lookupPath, HttpServletRequest request) throws Exception {
+    List&lt;Match&gt; matches = new ArrayList&lt;&gt;();
+    List&lt;T&gt; directPathMatches = this.mappingRegistry.getMappingsByDirectPath(lookupPath);
+    if (directPathMatches != null) {
+        addMatchingMappings(directPathMatches, matches, request);
+    }
+    if (matches.isEmpty()) {
+        addMatchingMappings(this.mappingRegistry.getRegistrations().keySet(), matches, request);
+    }
+    if (!matches.isEmpty()) {
+        Match bestMatch = matches.get(0);
+        if (matches.size() &gt; 1) {
+            Comparator&lt;Match&gt; comparator = new MatchComparator(getMappingComparator(request));
+            matches.sort(comparator);
+            bestMatch = matches.get(0);
+            if (logger.isTraceEnabled()) {
+                logger.trace(matches.size() + &quot; matching mappings: &quot; + matches);
+            }
+            if (CorsUtils.isPreFlightRequest(request)) {
+                for (Match match : matches) {
+                    if (match.hasCorsConfig()) {
+                        return PREFLIGHT_AMBIGUOUS_MATCH;
+                    }
+                }
+            }
+            else {
+                Match secondBestMatch = matches.get(1);
+                if (comparator.compare(bestMatch, secondBestMatch) == 0) {
+                    Method m1 = bestMatch.getHandlerMethod().getMethod();
+                    Method m2 = secondBestMatch.getHandlerMethod().getMethod();
+                    String uri = request.getRequestURI();
+                    throw new IllegalStateException(
+                        &quot;Ambiguous handler methods mapped for '&quot; + uri + &quot;': {&quot; + m1 + &quot;, &quot; + m2 + &quot;}&quot;);
+                }
+            }
+        }
+        request.setAttribute(BEST_MATCHING_HANDLER_ATTRIBUTE, bestMatch.getHandlerMethod());
+        handleMatch(bestMatch.mapping, lookupPath, request);
+        return bestMatch.getHandlerMethod();
+    }
+    else {
+        return handleNoMatch(this.mappingRegistry.getRegistrations().keySet(), lookupPath, request);
+    }
+}
+</code></pre>
+<ol>
+<li>从MappingRegistry对象中的pathLookup属性获取该handler method的path路径</li>
+<li>如果返回的内容不为空的话调用addMatchingMappings方法将匹配到的内容添加到matches变量中</li>
+<li>后续判断matches的size大小来判断是否有匹配到的handler method，如果为空则遍历mappingRegistry属性</li>
+<li>如果有多个matches则对前两个handler method进行对比，若只有一个则直接使用该handler method</li>
+</ol>
+<p>接下来就是动态注册Controller，调用之前<code>MappingRegistry#register()</code>方法。和Servlet的添加较为类似的是，要添加访问url与RequestMappingInfo的映射，以及RequestMappingInfo与HandlerMethod的映射。<br>
+动态添加Controller：<br>
+<img src="https://1jzz.github.io/post-images/1654331500450.png" alt="" loading="lazy"><br>
+访问添加的Controller：<br>
+<img src="https://1jzz.github.io/post-images/1654331506485.png" alt="" loading="lazy"></p>
+<h2 id="spring-interceptor内存马">Spring Interceptor内存马</h2>
+<p>这里的Intercepor是指Spring中的拦截器，它是Spring使用AOP对Filter思想的另一种实现，在其他框架如Struts2中也有拦截器思想的相关实现。Intercepor主要是针对Controller进行拦截。<br>
+Intercepor是在什么时候调用的呢？又配置储存在那里？这部分比较简单。其过程为：</p>
+<ol>
+<li>Spring MVC使用DispatcherServlet的<code>doDispatch</code>方法进入主要处理逻辑</li>
+<li>调用了getHandler方法，从request中获取了lookupPath，例如<code>/index</code></li>
+<li>调用<code>AbstractHandlerMethodMapping#lookupHandlerMethod()</code>匹配合适的handler method</li>
+<li>调用<code>AbstractHandlerMapping#getHandlerExecutionChain()</code>方法，遍历了<code>this.adaptedInterceptors</code>属性中所有HandlerInterceptor对象，最后会将这个Interceptor添加到传入的HandlerExecutionChain对象中</li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1654331512874.png" alt="" loading="lazy"></figure>
+<ol start="5">
+<li>通过调用<code>HandlerExecutionChain#applyPreHandle()</code>方法，遍历其中的HandlerInterceptor对象，并调用其preHandle方法执行拦截器的逻辑</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1654331519874.png" alt="" loading="lazy"><br>
+正常访问：<br>
+<img src="https://1jzz.github.io/post-images/1654331525199.png" alt="" loading="lazy"><br>
+添加拦截器：<br>
+<img src="https://1jzz.github.io/post-images/1654331530316.png" alt="" loading="lazy"></p>
+<h2 id="tomcat-valve内存马">Tomcat Valve内存马</h2>
+<p>Tomcat在处理一个请求调用逻辑时，是如何处理和传递Request和Response对象的呢？为了整体架构的每个组件的可伸缩型和可扩展性，Tomcat使用了职责链模式来实现客户端请求的处理。在Tomcat中定义了两个接口：Pipeline(管道)和Valve(阀)。这两个接口名字很好的诠释了处理模式：数据流就像是流经管道的水一样，经过管道上的一个个阀门。<br>
+Pipieline会有一个最基础的Valve(basic)，它始终位于末端(最后执行)，封装了具体的请求处理和输出相应的过程。Pipeline提供了<code>addValve</code>方法，可以添加新Valve在basic之前，并按照添加顺序执行。<br>
+<img src="https://1jzz.github.io/post-images/1654331535230.png" alt="" loading="lazy"><br>
+tomcat由Connector和Container(容器)两部分组成，而当网络请求过来的时候Connector先将请求包装为Request，然后将Request交由Container进行处理，最终返回给请求方。而Container处理的第一层就是Engine容器，但是在tomcat容器中Engine容器不会直接调用Host容器去处理请求，那么请求是怎么在四个容器中流转的呢？<br>
+当请求到达Engine容器的时候，Engine并非是直接调用对应的Host去处理相关的请求，而是调用了自己的一个组件去处理，这个组件就叫做Pipeline，跟pipeline相关的还有个也是容器内部的组件，叫做valve组件。<br>
+Pipeline(管道)的作用就如其名字一样，可以把不同的容器想象成一个独立的个体，那么pipeline就可以理解为不同容器之间的管道。Valve也就可以理解为阀门。每个管道上都有阀门，并且一个管道上是可以有多个阀门的。<br>
+在Tomcat的Catalina中，我们有四种容器，每个容器都有自己的Pipeline组件，每个Pipeline组件上至少会设定一个Valve(阀门)，称之为BasicValve(基础阀门)。基础阀的作用就是连接当前容器的下一个容器，可以说基础阀就是两个容器之间的桥梁。<br>
+Tomcat每个层级的容器(Engine、Host、Context、Wrapper)，都有基础的Valve实现(StandardEngineValve、StandardHostValve、StandardContextValve、StandardWrapperValve)，它们同时维护了一个Pipie实例(StandardPipeline)，也就是说，我们可以在任何层级的容器上针对请求处理进行扩展。这四个Valve的基础实现都继承了ValveBase。这个类帮我们实现了生命接口以及MBeanRegistration接口，我们只需专注阀门的逻辑处理即可。<br>
+先来看一下接口的定义，<code>org.apache.catalina.Pipeline</code>：<br>
+<img src="https://1jzz.github.io/post-images/1654331541599.png" alt="" loading="lazy"></p>
+<ol>
+<li>getBasic()：获取基础阀门</li>
+<li>setBasic()：设置基础阀门</li>
+<li>addValve()：添加阀门</li>
+<li>getValves()：获取所有阀门</li>
+<li>removeValves()：移除指定阀门</li>
+<li>getFirst()：获取首个阀门</li>
+<li>isAsyncSupported()：是否支持异步</li>
+</ol>
+<p><code>org.apache.catalina.Valve</code>:<br>
+<img src="https://1jzz.github.io/post-images/1654331547189.png" alt="" loading="lazy"></p>
+<ol>
+<li>getNext()：获取下一个阀门</li>
+<li>setNext()：设置下一个阀门</li>
+<li>void backgroundProcess()：后台执行逻辑</li>
+<li>invoke()：执行业务逻辑</li>
+</ol>
+<p>Tomcat中Pipeline仅有一个类实现了这个接口，为StandardPipeline，存放在ContainerBase类的pipeline属性中，并且ContainerBase提供<code>addValue</code>方法调用StandardPipeline的addValve方法添加Valve。<br>
+其添加逻辑为：<br>
+<img src="https://1jzz.github.io/post-images/1654331552360.png" alt="" loading="lazy"><br>
+Tomcat中四个层级容器都继承了ContainerBase，所以在哪个层级的容器上都可以自定义的添加Valve。<br>
+添加后，将会在<code>org.apache.cataline.connector.CoyoteAdapter#service()</code>方法中调用<code>Valve#invoke()</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1654331559388.png" alt="" loading="lazy"><br>
+这里我们只要自己写一个Valve的实现类。里面的<code>invoke</code>方法加入我们的恶意代码，由于可以拿到Request和Response，所以也可以做一些参数上的处理或者回显。然后调用<code>StandardPipeline#addValve()</code>方法将这个Valve添加进去。<br>
+正常访问：<br>
+<img src="https://1jzz.github.io/post-images/1654331565000.png" alt="" loading="lazy"><br>
+添加Valve：<br>
+<img src="https://1jzz.github.io/post-images/1654331571617.png" alt="" loading="lazy"></p>
+<h1 id="总结">总结</h1>
+<ol>
+<li>这里只是简单了解到了内存马的写入过程</li>
+<li>还需要了解java Agent内存马</li>
+<li>去了解冰蝎中的内存马是怎么被注入并且利用的</li>
+</ol>
+<h1 id="参考">参考</h1>
+<p><a href="https://www.cnblogs.com/coldridgeValley/p/5816414.html">https://www.cnblogs.com/coldridgeValley/p/5816414.html</a><br>
+<a href="https://su18.org/post/memory-shell">https://su18.org/post/memory-shell</a><br>
+<a href="https://github.com/su18/MemoryShell">https://github.com/su18/MemoryShell</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#%E4%BD%BF%E7%94%A8">使用</a>
+<ul>
+<li><a href="#servlet-api%E6%8F%90%E4%BE%9B%E7%9A%84%E5%8A%A8%E6%80%81%E6%B3%A8%E5%86%8C%E6%9C%BA%E5%88%B6">Servlet API提供的动态注册机制</a>
+<ul>
+<li><a href="#filter%E5%86%85%E5%AD%98%E9%A9%AC">Filter内存马</a></li>
+<li><a href="#servlet%E5%86%85%E5%AD%98%E9%A9%AC">Servlet内存马</a></li>
+<li><a href="#listener%E5%86%85%E5%AD%98%E9%A9%AC">Listener内存马</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#%E6%8E%A7%E5%88%B6%E5%99%A8-%E6%8B%A6%E6%88%AA%E5%99%A8-%E7%AE%A1%E9%81%93">控制器、拦截器、管道</a>
+<ul>
+<li><a href="#spring-controller%E5%86%85%E5%AD%98%E9%A9%AC">Spring Controller内存马</a></li>
+<li><a href="#spring-interceptor%E5%86%85%E5%AD%98%E9%A9%AC">Spring Interceptor内存马</a></li>
+<li><a href="#tomcat-valve%E5%86%85%E5%AD%98%E9%A9%AC">Tomcat Valve内存马</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/5paZbcG9g/">
+              <h3 class="post-title">
+                CVE-2022-22965分析与利用
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

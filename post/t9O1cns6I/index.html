@@ -1,0 +1,302 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>浅析Padding Oracle Attack | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="浅析Padding Oracle Attack | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+针对CBC模式的&quot;Padding Oracle Attack&quot;，它可以在不知道密钥的情况下，通过对padding bytes的尝试，还原明文，或者或者构造出任意明文的密文。
+以DES的Padding Oracle的..." />
+    <meta name="keywords" content="学习" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              浅析Padding Oracle Attack
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-10
+              </span>
+              <span>
+                5 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gT7zd6Cw_/" class="post-tag">
+                  # 学习
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>针对CBC模式的&quot;Padding Oracle Attack&quot;，它可以在不知道密钥的情况下，通过对padding bytes的尝试，还原明文，或者或者构造出任意明文的密文。<br>
+以DES的Padding Oracle的原理为例进行分析,分组加密算法在实现加/解密时，需要把消息进行分组(block)如果最后一个分组的消息的长度没有达到block的大小，则需要填充一些字节，被称为padding。<br>
+以8个字节一个block为例,比如明文是abc，长度为3个字节，则剩下5个字节被填充了0x05，0x05，0x05，0x05，0x05这5个相同的字节，每个字节的值等于需要填充的字节长度。如果明文长度刚好为8个字节，如：ljzztest，则后面需要填充8个字节的padding，其值为0x08。这样的填充方法，遵循的是最常见PKCS#5标准。<br>
+<img src="https://1jzz.github.io/post-images/1649641816434.png" alt="" loading="lazy"></p>
+<h1 id="des加解密">DES加解密</h1>
+<h2 id="实例">实例</h2>
+<p>我们可以使用python的pyDes库中的des进行测试：</p>
+<pre><code class="language-python">from pyDes import des
+import binascii
+
+def hex_s(content):
+    result = &quot;&quot;
+    for i in range(0, len(content)):
+        result += &quot;\\x&quot; + str(binascii.b2a_hex(bytes([content[i]])))[2:-1]
+    return result
+
+key = &quot;12342345&quot;
+iv = &quot;testtest&quot;
+plain = &quot;ljzztest1&quot;
+
+o = des(key.encode(&quot;utf8&quot;), 1, iv, None, 2)
+cipher = o.encrypt(plain.encode('utf8'), None, 2)
+print(hex_s(cipher))
+print(str(binascii.b2a_hex(cipher))[2:-1])from pyDes import des
+
+def hex_s(content):
+    result = &quot;&quot;
+    print(str(len(content)))
+    for i in range(0, len(content)):
+        result += &quot;\\x&quot; + str(content[i])
+    return result
+
+key = &quot;12342345&quot;
+iv = &quot;testtest&quot;
+plain = &quot;ljzztest1&quot;
+
+o = des(key.encode(&quot;utf8&quot;), 1, iv, None, 2)
+cipher = o.encrypt(plain.encode('utf8'), None, 2)
+print(hex_s(cipher))
+</code></pre>
+<p>可以看到，其中的明文为ljzztest1，为9为字符，按照理论来说，后面会有7个字节的0x07进行填充。<br>
+执行结果：</p>
+<pre><code>b'ljzztest1\x07\x07\x07\x07\x07\x07\x07'
+\x52\x62\x81\x46\x8d\x83\x3d\x71\xc7\x2d\xeb\xab\x29\x90\x0c\xf6
+</code></pre>
+<p>可以看到，确实是这样子的。</p>
+<h2 id="加密">加密</h2>
+<p>其加密过程如下：<br>
+<img src="https://1jzz.github.io/post-images/1649641855942.png" alt="" loading="lazy"></p>
+<ol>
+<li>初始化向量IV与分组1的明文进行xor运算</li>
+<li>经过DES加密得到分组1的密文</li>
+<li>将分组1的密文，作为分组2的IV进行xor运算</li>
+<li>经过DES加密得到分组2的密文</li>
+<li>不断重复</li>
+</ol>
+<h2 id="解密">解密</h2>
+<p>其解密流程如下：<br>
+<img src="https://1jzz.github.io/post-images/1649641886957.png" alt="" loading="lazy"></p>
+<ol>
+<li>最后一个分组的密文进行DES解密</li>
+<li>最后一个分组的的Intermediary Value与上一个分组的密文进行xor运算</li>
+<li>得到最后一个分组的密文</li>
+<li>倒数第二个分组进行DES解密</li>
+<li>倒数第二个分组的的Intermediary Value与上一个分组的密文进行xor运算</li>
+<li>得到倒数第二个分组的密文</li>
+<li>不断重复</li>
+</ol>
+<h2 id="在解密过程中对填充值的处理">在解密过程中对填充值的处理</h2>
+<p>在解密完成后，如果最后的padding值不正确，解密程序往往会抛出异常(padding error)。而利用应用的错误回显，攻击者往往可以判断出padding是否正确。<br>
+在web应用中，如果padding不正确，则应用程序很可能会返回500错误；如果padding正确，但解密出来的内容不正确，则可能返回200的自定义错误。那么，以分组1为例，构造IV为8个0字节。：<br>
+<code>0000000000000000F851D6CC68FC9537</code><br>
+此时在解密时padding是不正确的，可能会返回500状态码:<br>
+<img src="https://1jzz.github.io/post-images/1649641908056.png" alt="" loading="lazy"><br>
+通过遍历IV中最后一个字节的值（0x00-0xff），当Decrypted Value的值为0x01时，是一个正确的padding byte，此时IV为（000000000000003C），<br>
+可能会返回200状态码：<br>
+<img src="https://1jzz.github.io/post-images/1649641943775.png" alt="" loading="lazy"></p>
+<h1 id="还原明文">还原明文</h1>
+<p>通过xor运算，可以推导出此字节上的Intermediary Byte的值：</p>
+<pre><code>Intermediary Byte ^ 0x3c == 0x01
+Intermediary Byte == 0x3c ^ 0x01
+Intermediary Byte == 0x3d
+</code></pre>
+<p>此时我们得到了一个字节的Intermediary Value的值，这个时候我们回顾一下加密流程：<br>
+<img src="https://1jzz.github.io/post-images/1649641949539.png" alt="" loading="lazy"><br>
+初始化向量IV与明文进行xor运算得到了Intermediary Value，因此将Intermediary Value与IV进行xor运算就可以得到明文！</p>
+<pre><code>0x3d ^ 0x0F == 0x32 == '2'
+</code></pre>
+<p>对于多分组的密文来说，从最后一组密文开始往前推。</p>
+<ol>
+<li>第二个分组的IV值是上一个分组的密文</li>
+<li>可以通过Padding Oracle Attack获取到Intermediary Value</li>
+<li>第一个分组的IV值是初始化向量IV</li>
+<li>可以通过Padding Oracle Attack获取到Intermediary Value</li>
+<li>获得明文<br>
+<img src="https://1jzz.github.io/post-images/1649641963086.png" alt="" loading="lazy"></li>
+</ol>
+<h1 id="任意明文加密原理">任意明文加密原理</h1>
+<p>通过上面还原明文的解密过程可以发现，通过修改IV，可以控制整个解密过程。因此在已经获得了Intermediary Value的情况下，可以通过xor指定的明文值来获取需要构造的IV。<br>
+<img src="https://1jzz.github.io/post-images/1649641971240.png" alt="" loading="lazy"><br>
+疑惑点：多个分组构造密文。<br>
+思路：上一个分组的密文已经固定，需要遍历出指定的密文，经过DES解密与上一个分组的密文异或为指定的明文。</p>
+<h1 id="总结">总结</h1>
+<ol>
+<li>padding Oracle attack可以使我们在分组加密中采用了CBC模式的密文中获取明文（不知道key的情况下）。</li>
+<li>可以通过padding Oracle attack构造出任意明文的密文。</li>
+</ol>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#des%E5%8A%A0%E8%A7%A3%E5%AF%86">DES加解密</a>
+<ul>
+<li><a href="#%E5%AE%9E%E4%BE%8B">实例</a></li>
+<li><a href="#%E5%8A%A0%E5%AF%86">加密</a></li>
+<li><a href="#%E8%A7%A3%E5%AF%86">解密</a></li>
+<li><a href="#%E5%9C%A8%E8%A7%A3%E5%AF%86%E8%BF%87%E7%A8%8B%E4%B8%AD%E5%AF%B9%E5%A1%AB%E5%85%85%E5%80%BC%E7%9A%84%E5%A4%84%E7%90%86">在解密过程中对填充值的处理</a></li>
+</ul>
+</li>
+<li><a href="#%E8%BF%98%E5%8E%9F%E6%98%8E%E6%96%87">还原明文</a></li>
+<li><a href="#%E4%BB%BB%E6%84%8F%E6%98%8E%E6%96%87%E5%8A%A0%E5%AF%86%E5%8E%9F%E7%90%86">任意明文加密原理</a></li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/静态博客搭建/">
+              <h3 class="post-title">
+                静态博客搭建
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

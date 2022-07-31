@@ -1,0 +1,293 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CVE-2022-22947 Spring Cloud Gateway RCE | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="CVE-2022-22947 Spring Cloud Gateway RCE | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="漏洞描述
+在使用Spring Cloud Gateway应用程序开启并且暴露Gateway Actuator端点时，会造成代码注入攻击，导致RCE
+影响版本
+
+3.1.x &lt; 3.1.1
+3.0.x &lt; 3.0.7
+
+了解Spr..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              CVE-2022-22947 Spring Cloud Gateway RCE
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-06-25
+              </span>
+              <span>
+                5 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="漏洞描述">漏洞描述</h1>
+<p>在使用Spring Cloud Gateway应用程序开启并且暴露Gateway Actuator端点时，会造成代码注入攻击，导致RCE</p>
+<h1 id="影响版本">影响版本</h1>
+<ul>
+<li>3.1.x &lt; 3.1.1</li>
+<li>3.0.x &lt; 3.0.7</li>
+</ul>
+<h1 id="了解spring-cloud-gateway">了解Spring Cloud Gateway</h1>
+<p>Spring Cloud Gateway是Spring Cloud的一个全新项目，该项目是基于Spring5.0，SpringBoot2.0和Project Reactor等技术开发的网关，它旨在为微服务架构提供一种简单有效的统一的API路由管理方式。<br>
+其工作流程：<br>
+客户端向Spring Cloud Gateway发出请求。如果网关处理器的Map匹配到相关路由，则将其发送到网关web程序进行处理。通过特定的过滤器链通过代理发送请求，再经过过滤器链回到网关web程序。<br>
+<img src="https://1jzz.github.io/post-images/1656166533831.png" alt="" loading="lazy"><br>
+Predicate断言条件(转发规则)介绍：<br>
+<img src="https://1jzz.github.io/post-images/1656166539404.png" alt="" loading="lazy"><br>
+快捷配置(Shortcut Configuration)<br>
+=号之后为过滤名称，逗号之后为该参数的值。示例：</p>
+<pre><code class="language-yaml">spring:
+  cloud:
+    gateway:
+      routes:
+      - id: after_route
+        uri: https://example.org
+        predicates:
+        - Cookie=mycookie,mycookievalue
+</code></pre>
+<p>完全扩展参数：<br>
+更为标准的yaml配置键值对。args是存储键值对的map来配置predicate或者filter。</p>
+<pre><code class="language-yaml">spring:
+  cloud:
+    gateway:
+      routes:
+      - id: after_route
+        uri: https://example.org
+        predicates:
+        - name: Cookie
+          args:
+            name: mycookie
+            regexp: mycookievalue
+</code></pre>
+<h1 id="漏洞分析">漏洞分析</h1>
+<p>首先查看github上的commit：<br>
+在<code>ShortcutConfigurable#getValue()</code>方法中如果匹配到#{}则认为是spel，并且对其进行解析。而在修复之前使用的是StandardEvaluationContext这个上下文，修复之后使用的是GatewayEvaluationContext这个上下文，两者的区别的话应该是。。。。。。<br>
+<img src="https://1jzz.github.io/post-images/1656166545865.png" alt="" loading="lazy"><br>
+rawValue的值从entryValue中获取。<br>
+<img src="https://1jzz.github.io/post-images/1656166550317.png" alt="" loading="lazy"><br>
+可以在<code>ShortcutConfigurable#ShortcutType()</code>这个枚举类中看到对getValue方法进行了调用。遍历args，然后取出Value，然后将这个Value传入到getValue方法，所以需要保持args这个变量可控。<br>
+<img src="https://1jzz.github.io/post-images/1656166554776.png" alt="" loading="lazy"><br>
+接着我们找一下那里对这个枚举类的normalize方法进行了调用。<br>
+在查找调用之前先使用maven下载源代码：<code>mvn dependency:sources -DownloadSources=true -DownloadJavaDocs=true</code><br>
+在<code>ConfigurationService#normalizeProperties()</code>方法中可以看到对ShortcutConfigurable接口进行继承，最终调用了<code>ShortcutType.DEFAULT</code>中的normalize方法。<br>
+<img src="https://1jzz.github.io/post-images/1656166560147.png" alt="" loading="lazy"><br>
+<img src="https://1jzz.github.io/post-images/1656166564260.png" alt="" loading="lazy"><br>
+其中传递给normalize方法的args参数为AbstractBuilder类的properties属性。在<code>AbstractBuilder#properties()</code>方法中进行初始化。<br>
+<img src="https://1jzz.github.io/post-images/1656166568341.png" alt="" loading="lazy"><br>
+<code>ConfigurationService#normalizeProperties()</code>这个方法又在<code>AbstractBuilder#bind()</code>方法进行调用。properties未在这里进行初始化，也就是说是在调用bind方法之前对properties属性进行赋值，而在初始化的过程中需要调用<code>AbstractBuilder#properties()</code>方法，在查找的过程中可以留意一下两者是否同时出现过。<br>
+可以看到在<code>RouteDefinitionRouteLocator#lookup()</code>方法和<code>RouteDefinitionRouteLocator#loadGatewayFilters()</code>方法都出现过。分别从filterDefinitions参数和predicate参数中获取properties属性的值。<br>
+<img src="https://1jzz.github.io/post-images/1656166573491.png" alt="" loading="lazy"><br>
+loadGatewayFilters方法在getFilters中调用，其中filterDefinitions参数传入的是一个包含所有Filter的ArrayList对象，其参数是不可控的。<br>
+再来看一看lookup方法。<br>
+在<code>RouteDefinitionRouteLocator#combinePredicates()</code>方法中进行了调用，参数来自于传参的routeDefinition，接着跟。<br>
+<img src="https://1jzz.github.io/post-images/1656166578198.png" alt="" loading="lazy"><br>
+在调试过后发现RouteDefinition对象就是yml中配置的路由网关。而配置中的predicates值就是最后传入到<code>ShortcutConfigurable#getValue()</code>方法中的entryValue参数。所以只要控制了路由的predicates的值就可以执行任意代码了。<br>
+那么我们该如何去利用这个漏洞呢？<br>
+需要结合官方文档进行配置(<a href="https://docs.spring.io/spring-cloud-gateway/docs/3.1.0/reference/html/#gateway-request-predicates-factories">https://docs.spring.io/spring-cloud-gateway/docs/3.1.0/reference/html/#gateway-request-predicates-factories</a>)。<br>
+在官方文档中提供了各种配置的解释以及demo，我们可以随便添加一个predicate，然后触发这个漏洞。<br>
+<img src="https://1jzz.github.io/post-images/1656166589703.png" alt="" loading="lazy"><br>
+先修改一下配置文件application.yml，看是否会执行，执行之后发现是可以弹计算器的。<br>
+<img src="https://1jzz.github.io/post-images/1656166597806.png" alt="" loading="lazy"><br>
+但是我们不可能直接修改服务器上的配置文件，所以需要去找一个利用点，这个利用点就是Spring Cloud Gateway中的Actuator API，添加一个路由。<br>
+也可以通过访问<code>/actuator/gateway/routes</code>来访问对应id的路由信息，如果可以访问的话那就说明Actuator API是暴露的。<br>
+<img src="https://1jzz.github.io/post-images/1656166602694.png" alt="" loading="lazy"><br>
+接下来我们借鉴官方的demo来尝试添加一个路由来利用这个漏洞。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;ljzz&quot;,
+  &quot;predicates&quot;: [{
+    &quot;name&quot;: &quot;Path&quot;,
+    &quot;args&quot;: {&quot;_genkey_0&quot;:&quot;#{T(java.lang.Runtime).getRuntime().exec('calc')}&quot;}
+  }],
+  &quot;filters&quot;: [],
+  &quot;uri&quot;: &quot;https://www.uri-destination.org&quot;,
+  &quot;order&quot;: 0
+}
+</code></pre>
+<p>创建完路由之后refresh一下就会生效。<br>
+<img src="https://1jzz.github.io/post-images/1656166607079.png" alt="" loading="lazy"><br>
+当刷新完路由之后，即可执行代码。<br>
+<img src="https://1jzz.github.io/post-images/1656166612374.png" alt="" loading="lazy"><br>
+为了防止多次刷新，可以在触发payload之后删除路由。<br>
+<img src="https://1jzz.github.io/post-images/1656166617949.png" alt="" loading="lazy"></p>
+<h1 id="防御">防御</h1>
+<ol>
+<li>禁用Actuator，配置<code>management.endpoint.gateway.enable：false</code>不启动网关</li>
+<li>使用Spring Security、shiro等进行保护，需要权限操作</li>
+<li>升级至安全的版本</li>
+</ol>
+<h1 id="参考">参考</h1>
+<p><a href="http://wjlshare.com/archives/1748">http://wjlshare.com/archives/1748</a><br>
+<a href="https://www.freebuf.com/articles/network/331442.html">https://www.freebuf.com/articles/network/331442.html</a><br>
+<a href="https://www.cnblogs.com/crazymakercircle/p/11704077.html">https://www.cnblogs.com/crazymakercircle/p/11704077.html</a><br>
+<a href="https://docs.spring.io/spring-cloud-gateway/docs/3.1.0/reference/html/#recap-the-list-of-all-endpoints">https://docs.spring.io/spring-cloud-gateway/docs/3.1.0/reference/html/#recap-the-list-of-all-endpoints</a></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#%E6%BC%8F%E6%B4%9E%E6%8F%8F%E8%BF%B0">漏洞描述</a></li>
+<li><a href="#%E5%BD%B1%E5%93%8D%E7%89%88%E6%9C%AC">影响版本</a></li>
+<li><a href="#%E4%BA%86%E8%A7%A3spring-cloud-gateway">了解Spring Cloud Gateway</a></li>
+<li><a href="#%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90">漏洞分析</a></li>
+<li><a href="#%E9%98%B2%E5%BE%A1">防御</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/vTkOq1DeP/">
+              <h3 class="post-title">
+                CVE-2022-26134 Confluence OGNL RCE 漏洞分析
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>

